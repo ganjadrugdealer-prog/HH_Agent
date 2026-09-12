@@ -1,8 +1,8 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>РџСЂРѕРіРѕРЅ</title>
+<title>Прогон</title>
 <style>
   :root{
     --bg:#f4f5f7; --card:#fff; --ink:#131722; --muted:#6b7280; --line:#e3e6ea;
@@ -85,40 +85,39 @@
   .said{color:var(--muted);font-size:13px}
   label.chk{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer}
 </style>
-<script src="theme.js"></script>
 </head>
 <body>
 <header>
   <div class="top">
-    <h1>РџСЂРѕРіРѕРЅ</h1>
-    <span class="state" id="state">РёРґС‘С‚вЂ¦</span>
+    <h1>Прогон</h1>
+    <span class="state" id="state">идёт…</span>
     <span class="clock" id="clock">00:00</span>
   </div>
   <div class="tiles">
-    <div class="tile hit"><b id="c_applied">0</b><span>РѕС‚РєР»РёРєРѕРІ</span></div>
-    <div class="tile stop"><b id="c_filtered">0</b><span>СЃС‚РѕРї-СЃР»РѕРІР°</span></div>
-    <div class="tile"><b id="c_seen_before">0</b><span>СѓР¶Рµ Р±С‹Р»Рё</span></div>
-    <div class="tile bad"><b id="c_rejected">0</b><span>РѕС‚РєР°Р· СЃСЂР°Р·Сѓ</span></div>
-    <div class="tile bad"><b id="c_error">0</b><span>РѕС€РёР±РѕРє</span></div>
+    <div class="tile hit"><b id="c_applied">0</b><span>откликов</span></div>
+    <div class="tile stop"><b id="c_filtered">0</b><span>стоп-слова</span></div>
+    <div class="tile"><b id="c_seen_before">0</b><span>уже были</span></div>
+    <div class="tile bad"><b id="c_rejected">0</b><span>отказ сразу</span></div>
+    <div class="tile bad"><b id="c_error">0</b><span>ошибок</span></div>
   </div>
   <div class="tabs">
-    <button class="on" data-tab="feed" onclick="tab('feed')">Р›РµРЅС‚Р°</button>
-    <button data-tab="report" onclick="tab('report')">РћС‚С‡С‘С‚</button>
+    <button class="on" data-tab="feed" onclick="tab('feed')">Лента</button>
+    <button data-tab="report" onclick="tab('report')">Отчёт</button>
   </div>
 </header>
 
 <main>
-  <div id="feed"><div class="empty">Р–РґСѓ РїРµСЂРІС‹С… СЃРѕР±С‹С‚РёР№вЂ¦</div></div>
-  <div id="report" style="display:none"><div class="empty">РћС‚С‡С‘С‚ РїРѕСЏРІРёС‚СЃСЏ, РєРѕРіРґР° РїСЂРѕРіРѕРЅ Р·Р°РєРѕРЅС‡РёС‚СЃСЏ.</div></div>
+  <div id="feed"><div class="empty">Жду первых событий…</div></div>
+  <div id="report" style="display:none"><div class="empty">Отчёт появится, когда прогон закончится.</div></div>
 </main>
 
 <footer>
-  <label class="chk"><input type="checkbox" id="onlyImportant" onchange="rerender()"> С‚РѕР»СЊРєРѕ РІР°Р¶РЅРѕРµ</label>
-  <label class="chk"><input type="checkbox" id="autoscroll" checked> РїСЂРѕРєСЂСѓС‡РёРІР°С‚СЊ</label>
+  <label class="chk"><input type="checkbox" id="onlyImportant" onchange="rerender()"> только важное</label>
+  <label class="chk"><input type="checkbox" id="autoscroll" checked> прокручивать</label>
   <span class="grow"></span>
   <span class="said" id="said"></span>
-  <button class="act ghost" id="btnFolder" onclick="openFolder()">РџР°РїРєР° СЃ РѕС‚С‡С‘С‚Р°РјРё</button>
-  <button class="act danger" id="btnStop" onclick="stop()">РћСЃС‚Р°РЅРѕРІРёС‚СЊ</button>
+  <button class="act ghost" id="btnFolder" onclick="openFolder()">Папка с отчётами</button>
+  <button class="act danger" id="btnStop" onclick="stop()">Остановить</button>
 </footer>
 
 <script>
@@ -126,10 +125,10 @@ let EV = [], COUNTS = {}, REPORT = null, TAB = 'feed', FINISHED = false, T0 = Da
 const $ = id => document.getElementById(id);
 
 const IC = {
-  applied:'рџ“Ё', applied_test:'рџ“Ё', applied_captcha:'рџ“Ё', filtered:'рџљ«',
-  blacklisted:'рџљ«', seen_before:'вЏ©', rejected:'в›”', limit:'рџ›‘', email:'рџ“§',
-  resume_start:'рџљЂ', resume_done:'вњ…', all_done:'рџЏЃ', captcha:'рџ§©', redirect:'в†ЄпёЏ',
-  error:'вљ пёЏ', info:'В·'
+  applied:'📨', applied_test:'📨', applied_captcha:'📨', filtered:'🚫',
+  blacklisted:'🚫', seen_before:'⏩', rejected:'⛔', limit:'🛑', email:'📧',
+  resume_start:'🚀', resume_done:'✅', all_done:'🏁', captcha:'🧩', redirect:'↪️',
+  error:'⚠️', info:'·'
 };
 const IMPORTANT = new Set(['applied','applied_test','applied_captcha','filtered',
   'blacklisted','rejected','limit','resume_start','resume_done','all_done','error']);
@@ -144,13 +143,13 @@ function evHtml(e){
   const bits = [];
   if (e.salary) bits.push('<span class="money">' + esc(e.salary) + '</span>');
   if (e.area) bits.push(esc(e.area));
-  if (e.remote) bits.push('СѓРґР°Р»С‘РЅРЅРѕ');
+  if (e.remote) bits.push('удалённо');
   if (e.title) bits.push(esc(e.text.replace(/https?:\/\/\S+/, '').trim()));
-  const link = e.url ? ' В· <a onclick="openUrl(\'' + esc(e.url) + '\')">РѕС‚РєСЂС‹С‚СЊ</a>' : '';
+  const link = e.url ? ' · <a onclick="openUrl(\'' + esc(e.url) + '\')">открыть</a>' : '';
   return '<div class="ev ' + cls(e.kind) + '">' +
-    '<div class="ic">' + (IC[e.kind] || 'В·') + '</div>' +
+    '<div class="ic">' + (IC[e.kind] || '·') + '</div>' +
     '<div class="body"><div class="ttl">' + title + '</div>' +
-    (bits.length || link ? '<div class="meta">' + bits.join(' В· ') + link + '</div>' : '') +
+    (bits.length || link ? '<div class="meta">' + bits.join(' · ') + link + '</div>' : '') +
     '</div><div class="t">' + esc(e.t) + '</div></div>';
 }
 
@@ -159,7 +158,7 @@ function rerender(){
   const list = only ? EV.filter(e => IMPORTANT.has(e.kind)) : EV;
   $('feed').innerHTML = list.length
     ? list.map(evHtml).join('')
-    : '<div class="empty">' + (FINISHED ? 'РЎРѕР±С‹С‚РёР№ РЅРµ Р±С‹Р»Рѕ.' : 'Р–РґСѓ РїРµСЂРІС‹С… СЃРѕР±С‹С‚РёР№вЂ¦') + '</div>';
+    : '<div class="empty">' + (FINISHED ? 'Событий не было.' : 'Жду первых событий…') + '</div>';
   scroll();
 }
 function scroll(){
@@ -180,7 +179,7 @@ function tab(name){
     b.classList.toggle('on', b.dataset.tab === name));
 }
 
-/* --- СЃРѕР±С‹С‚РёСЏ РёР· Python --- */
+/* --- события из Python --- */
 window.onRunEvent = function(e, counts){
   EV.push(e); counters(counts);
   const only = $('onlyImportant').checked;
@@ -196,11 +195,11 @@ window.onRunFinished = function(rep){
   FINISHED = true; REPORT = rep;
   counters(rep.counts);
   const s = $('state');
-  const map = {ok:['ok','РіРѕС‚РѕРІРѕ'], cancelled:['cancel','РѕСЃС‚Р°РЅРѕРІР»РµРЅРѕ'], error:['err','РѕС€РёР±РєР°']};
-  const [c, t] = map[rep.status] || ['ok','РіРѕС‚РѕРІРѕ'];
+  const map = {ok:['ok','готово'], cancelled:['cancel','остановлено'], error:['err','ошибка']};
+  const [c, t] = map[rep.status] || ['ok','готово'];
   s.className = 'state ' + c; s.textContent = t;
   $('btnStop').disabled = true;
-  $('btnStop').textContent = 'Р—Р°РІРµСЂС€РµРЅРѕ';
+  $('btnStop').textContent = 'Завершено';
   $('clock').textContent = fmt(rep.elapsed);
   renderReport(rep);
   tab('report');
@@ -213,31 +212,31 @@ function fmt(sec){
 }
 setInterval(() => { if (!FINISHED) $('clock').textContent = fmt((Date.now()-T0)/1000); }, 1000);
 
-/* --- РѕС‚С‡С‘С‚ --- */
+/* --- отчёт --- */
 function renderReport(rep){
   const c = rep.counts || {};
   const seg = [
-    ['applied',   c.applied   || 0, 'var(--ok)',   'РѕС‚РєР»РёРєРѕРІ'],
-    ['filtered',  c.filtered  || 0, '#e0a415',     'СЃС‚РѕРї-СЃР»РѕРІР°'],
-    ['seen',      c.seen_before||0, '#9aa2ad',     'СѓР¶Рµ Р±С‹Р»Рё'],
-    ['rejected',  c.rejected  || 0, 'var(--err)',  'РѕС‚РєР°Р· СЃСЂР°Р·Сѓ'],
+    ['applied',   c.applied   || 0, 'var(--ok)',   'откликов'],
+    ['filtered',  c.filtered  || 0, '#e0a415',     'стоп-слова'],
+    ['seen',      c.seen_before||0, '#9aa2ad',     'уже были'],
+    ['rejected',  c.rejected  || 0, 'var(--err)',  'отказ сразу'],
   ];
   const total = seg.reduce((a, s) => a + s[1], 0) || 1;
 
-  let html = '<div class="rep"><h2>Р§С‚Рѕ РїСЂРѕРёР·РѕС€Р»Рѕ Р·Р° ' + fmt(rep.elapsed) + '</h2>';
+  let html = '<div class="rep"><h2>Что произошло за ' + fmt(rep.elapsed) + '</h2>';
   if (rep.limit_reached)
-    html += '<div class="note">Р”РѕСЃС‚РёРіРЅСѓС‚ РґРЅРµРІРЅРѕР№ Р»РёРјРёС‚ РѕС‚РєР»РёРєРѕРІ РЅР° hh.ru. ' +
-            'РћСЃС‚Р°Р»СЊРЅС‹Рµ РІР°РєР°РЅСЃРёРё РѕСЃС‚Р°Р»РёСЃСЊ РЅРµРѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹РјРё вЂ” РїРѕРїСЂРѕР±СѓР№ РїРѕР·Р¶Рµ.</div>';
+    html += '<div class="note">Достигнут дневной лимит откликов на hh.ru. ' +
+            'Остальные вакансии остались необработанными — попробуй позже.</div>';
   html += '<div class="bar">' + seg.map(s =>
       s[1] ? '<i style="width:' + (100*s[1]/total) + '%;background:' + s[2] + '"></i>' : ''
     ).join('') + '</div>';
   html += '<div class="legend">' + seg.map(s =>
-      '<span><i style="background:' + s[2] + '"></i>' + s[3] + ' вЂ” <b>' + s[1] + '</b></span>'
+      '<span><i style="background:' + s[2] + '"></i>' + s[3] + ' — <b>' + s[1] + '</b></span>'
     ).join('') + '</div></div>';
 
   if ((rep.resumes || []).length){
-    html += '<div class="rep"><h2>РџРѕ СЂРµР·СЋРјРµ</h2><table><tr><th>Р РµР·СЋРјРµ</th>' +
-            '<th class="num">РћС‚РєР»РёРєРѕРІ</th></tr>' +
+    html += '<div class="rep"><h2>По резюме</h2><table><tr><th>Резюме</th>' +
+            '<th class="num">Откликов</th></tr>' +
       rep.resumes.map(r => '<tr><td>' + esc(r.title) + '</td><td class="num">' +
         (r.applied || 0) + '</td></tr>').join('') + '</table></div>';
   }
@@ -245,35 +244,35 @@ function renderReport(rep){
   const sent = (rep.events || []).filter(e => e.kind.startsWith('applied'));
   if (sent.length){
     const withPay = sent.filter(e => e.salary);
-    html += '<div class="rep"><h2>РљСѓРґР° РѕС‚РєР»РёРєРЅСѓР»РёСЃСЊ (' + sent.length + ')</h2><table>' +
-      '<tr><th>Р’Р°РєР°РЅСЃРёСЏ</th><th>Р—Р°СЂРїР»Р°С‚Р°</th><th>Р“РѕСЂРѕРґ</th></tr>' +
+    html += '<div class="rep"><h2>Куда откликнулись (' + sent.length + ')</h2><table>' +
+      '<tr><th>Вакансия</th><th>Зарплата</th><th>Город</th></tr>' +
       sent.slice(0, 60).map(e => '<tr><td>' +
         (e.url ? '<a onclick="openUrl(\'' + esc(e.url) + '\')">' + esc(e.title || e.url) + '</a>'
-               : esc(e.title || 'вЂ”')) +
-        '</td><td>' + esc(e.salary || 'вЂ”') + '</td><td>' + esc(e.area || 'вЂ”') + '</td></tr>'
+               : esc(e.title || '—')) +
+        '</td><td>' + esc(e.salary || '—') + '</td><td>' + esc(e.area || '—') + '</td></tr>'
       ).join('') + '</table>' +
-      (sent.length > 60 ? '<div class="said" style="margin-top:8px">РџРѕРєР°Р·Р°РЅС‹ РїРµСЂРІС‹Рµ 60 РёР· ' +
-        sent.length + '. РџРѕР»РЅС‹Р№ СЃРїРёСЃРѕРє вЂ” РІ С„Р°Р№Р»Рµ РѕС‚С‡С‘С‚Р°.</div>' : '') +
+      (sent.length > 60 ? '<div class="said" style="margin-top:8px">Показаны первые 60 из ' +
+        sent.length + '. Полный список — в файле отчёта.</div>' : '') +
       (withPay.length ? '' : '') + '</div>';
   }
 
   const errs = (rep.events || []).filter(e => e.kind === 'error');
   if (errs.length){
-    html += '<div class="rep"><h2>РћС€РёР±РєРё (' + errs.length + ')</h2>' +
-      errs.slice(0,20).map(e => '<div class="ev error"><div class="ic">вљ пёЏ</div>' +
+    html += '<div class="rep"><h2>Ошибки (' + errs.length + ')</h2>' +
+      errs.slice(0,20).map(e => '<div class="ev error"><div class="ic">⚠️</div>' +
         '<div class="body"><div class="meta">' + esc(e.text) + '</div></div>' +
         '<div class="t">' + esc(e.t) + '</div></div>').join('') + '</div>';
   }
 
   $('report').innerHTML = html;
-  $('said').textContent = 'РћС‚С‡С‘С‚ СЃРѕС…СЂР°РЅС‘РЅ';
+  $('said').textContent = 'Отчёт сохранён';
 }
 
-/* --- РґРµР№СЃС‚РІРёСЏ --- */
+/* --- действия --- */
 function stop(){
   $('btnStop').disabled = true;
-  $('btnStop').textContent = 'РћСЃС‚Р°РЅР°РІР»РёРІР°СЋвЂ¦';
-  $('said').textContent = 'Р”РѕСЃС‹Р»Р°СЋ С‚РµРєСѓС‰РёР№ РѕС‚РєР»РёРє Рё С‚РѕСЂРјРѕР¶Сѓ';
+  $('btnStop').textContent = 'Останавливаю…';
+  $('said').textContent = 'Досылаю текущий отклик и торможу';
   window.pywebview.api.cancel_apply();
 }
 function openUrl(u){ window.pywebview.api.open_external(u); }
@@ -290,5 +289,6 @@ async function boot(){
 window.addEventListener('pywebviewready', boot);
 setTimeout(() => { if (window.pywebview && window.pywebview.api) boot(); }, 400);
 </script>
+<script src="theme.js"></script>
 </body>
 </html>

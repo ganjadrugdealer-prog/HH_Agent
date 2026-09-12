@@ -116,7 +116,7 @@
     
     function updateBtn() {
         const isDark = document.body.classList.contains('dark-theme');
-        btn.innerHTML = isDark ? '<span>☀️</span> Светлая' : '<span>🌙</span> Темная';
+        btn.innerHTML = isDark ? '<span>🌙</span> Тьма' : '<span>☀️</span> Свет';
     }
     updateBtn();
 

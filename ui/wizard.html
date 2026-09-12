@@ -1,8 +1,8 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>РќР°СЃС‚СЂРѕР№РєР° вЂ” HH Agent</title>
+<title>Настройка — HH Agent</title>
 <style>
   :root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--soft:#f1f3f6;--ink:#131722;
     --dim:#667085;--faint:#98a2b3;--accent:#2563eb;--accent2:#1d4fd7;
@@ -26,7 +26,7 @@
     align-items:center;justify-content:center}
   .step.on .num{background:var(--accent);color:#fff}
   .step.done .num{background:var(--okbg);color:var(--ok);font-size:0}
-  .step.done .num::after{content:"вњ“";font-size:14px}
+  .step.done .num::after{content:"✓";font-size:14px}
   .ttl{font-size:15px;font-weight:650;flex:1}
   .opt{font-size:11.5px;font-weight:600;color:var(--faint);
     background:var(--soft);border-radius:20px;padding:2px 9px}
@@ -60,22 +60,21 @@
   .cnt{font-size:12.5px;color:var(--dim);margin-top:8px}
   .fin{margin-top:20px;text-align:center}
 </style>
-<script src="theme.js"></script>
 </head>
 <body>
 <div class="wrap">
-  <h1>РќР°СЃС‚СЂРѕР№РєР° HH Agent</h1>
-  <p class="lead">Р§РµС‚С‹СЂРµ С€Р°РіР°. Р—Р°Р№РјС‘С‚ РЅРµСЃРєРѕР»СЊРєРѕ РјРёРЅСѓС‚ вЂ” РїРѕС‚РѕРј РїСЂРёР»РѕР¶РµРЅРёРµ СЂР°Р±РѕС‚Р°РµС‚ СЃР°РјРѕ.</p>
+  <h1>Настройка HH Agent</h1>
+  <p class="lead">Четыре шага. Займёт несколько минут — потом приложение работает само.</p>
 
   <!-- 1 -->
   <div class="step on" id="st1">
-    <div class="hd"><span class="num">1</span><span class="ttl">Р‘СЂР°СѓР·РµСЂ РґР»СЏ РІС…РѕРґР°</span></div>
+    <div class="hd"><span class="num">1</span><span class="ttl">Браузер для входа</span></div>
     <div class="bd">
-      <p class="d">Р’С…РѕРґ РЅР° hh.ru РїСЂРѕРёСЃС…РѕРґРёС‚ РІ РЅР°СЃС‚РѕСЏС‰РµРј РѕРєРЅРµ Р±СЂР°СѓР·РµСЂР° вЂ” РёРЅР°С‡Рµ HH
-        РЅРµ РѕС‚РґР°С‘С‚ С‚РѕРєРµРЅ. РЎРєР°С‡РёРІР°РµС‚СЃСЏ РѕРґРёРЅ СЂР°Р·, РѕРєРѕР»Рѕ 150 РњР‘.</p>
+      <p class="d">Вход на hh.ru происходит в настоящем окне браузера — иначе HH
+        не отдаёт токен. Скачивается один раз, около 150 МБ.</p>
       <div class="row">
-        <button class="btn primary" id="b1">РЈСЃС‚Р°РЅРѕРІРёС‚СЊ Р±СЂР°СѓР·РµСЂ</button>
-        <button class="btn" id="s1">РЈР¶Рµ СѓСЃС‚Р°РЅРѕРІР»РµРЅ</button>
+        <button class="btn primary" id="b1">Установить браузер</button>
+        <button class="btn" id="s1">Уже установлен</button>
       </div>
       <div class="note" id="n1"></div>
     </div>
@@ -83,12 +82,12 @@
 
   <!-- 2 -->
   <div class="step" id="st2">
-    <div class="hd"><span class="num">2</span><span class="ttl">Р’С…РѕРґ РЅР° hh.ru</span></div>
+    <div class="hd"><span class="num">2</span><span class="ttl">Вход на hh.ru</span></div>
     <div class="bd">
-      <p class="d">РћС‚РєСЂРѕРµС‚СЃСЏ РѕРєРЅРѕ hh.ru. Р’РІРµРґРёС‚Рµ Р»РѕРіРёРЅ Рё РїР°СЂРѕР»СЊ РєР°Рє РѕР±С‹С‡РЅРѕ.
-        РџРѕСЃР»Рµ РІС…РѕРґР° РѕРєРЅРѕ Р·Р°РєСЂРѕРµС‚СЃСЏ СЃР°РјРѕ.</p>
+      <p class="d">Откроется окно hh.ru. Введите логин и пароль как обычно.
+        После входа окно закроется само.</p>
       <div class="row">
-        <button class="btn primary" id="b2">Р’РѕР№С‚Рё РЅР° hh.ru</button>
+        <button class="btn primary" id="b2">Войти на hh.ru</button>
       </div>
       <div class="note" id="n2"></div>
     </div>
@@ -96,19 +95,19 @@
 
   <!-- 3 -->
   <div class="step" id="st3">
-    <div class="hd"><span class="num">3</span><span class="ttl">РЎРѕРїСЂРѕРІРѕРґРёС‚РµР»СЊРЅРѕРµ РїРёСЃСЊРјРѕ</span></div>
+    <div class="hd"><span class="num">3</span><span class="ttl">Сопроводительное письмо</span></div>
     <div class="bd">
-      <p class="d">Р‘РµР· РїРёСЃСЊРјР° СЂР°СЃСЃС‹Р»РєР° РЅРµ Р·Р°РїСѓСЃС‚РёС‚СЃСЏ. Р’Р°СЂРёР°РЅС‚С‹ СЃР»РѕРІ Р±РµСЂРёС‚Рµ РІ
-        С„РёРіСѓСЂРЅС‹Рµ СЃРєРѕР±РєРё вЂ” <code>{Р—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ|Р”РѕР±СЂС‹Р№ РґРµРЅСЊ}</code> вЂ” С‚РѕРіРґР° РєР°Р¶РґС‹Р№
-        СЂР°Р±РѕС‚РѕРґР°С‚РµР»СЊ РїРѕР»СѓС‡РёС‚ СЃРІРѕР№ С‚РµРєСЃС‚, Р° РЅРµ РєРѕРїРёСЋ.</p>
+      <p class="d">Без письма рассылка не запустится. Варианты слов берите в
+        фигурные скобки — <code>{Здравствуйте|Добрый день}</code> — тогда каждый
+        работодатель получит свой текст, а не копию.</p>
       <textarea class="t" id="letter" rows="10"
-        placeholder="РќР°С‡РЅРёС‚Рµ СЃ РѕР±СЂР°Р·С†Р° Рё РїРµСЂРµРїРёС€РёС‚Рµ РїРѕРґ СЃРµР±СЏ."></textarea>
+        placeholder="Начните с образца и перепишите под себя."></textarea>
       <div class="cnt" id="cnt"></div>
       <div class="row" style="margin-top:10px">
-        <button class="btn" id="b3d">Р’СЃС‚Р°РІРёС‚СЊ РѕР±СЂР°Р·РµС†</button>
-        <button class="btn" id="b3s">РџРѕРєР°Р·Р°С‚СЊ РїСЂРёРјРµСЂС‹</button>
+        <button class="btn" id="b3d">Вставить образец</button>
+        <button class="btn" id="b3s">Показать примеры</button>
         <span class="sp"></span>
-        <button class="btn primary" id="b3" disabled>РЎРѕС…СЂР°РЅРёС‚СЊ Рё РїСЂРѕРґРѕР»Р¶РёС‚СЊ</button>
+        <button class="btn primary" id="b3" disabled>Сохранить и продолжить</button>
       </div>
       <div class="note" id="n3"></div>
     </div>
@@ -117,23 +116,23 @@
   <!-- 4 -->
   <div class="step" id="st4">
     <div class="hd"><span class="num">4</span><span class="ttl">Telegram</span>
-      <span class="opt">РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ</span></div>
+      <span class="opt">необязательно</span></div>
     <div class="bd">
-      <p class="d">РџСѓР»СЊС‚ Рё СѓРІРµРґРѕРјР»РµРЅРёСЏ РІ С‚РµР»РµС„РѕРЅ. РЎРѕР·РґР°Р№С‚Рµ Р±РѕС‚Р° Сѓ
-        <b>@BotFather</b>, РІСЃС‚Р°РІСЊС‚Рµ С‚РѕРєРµРЅ, РЅР°РїРёС€РёС‚Рµ Р±РѕС‚Сѓ Р»СЋР±РѕРµ СЃРѕРѕР±С‰РµРЅРёРµ
-        Рё РЅР°Р¶РјРёС‚Рµ В«РћРїСЂРµРґРµР»РёС‚СЊ РјРѕР№ IDВ».</p>
+      <p class="d">Пульт и уведомления в телефон. Создайте бота у
+        <b>@BotFather</b>, вставьте токен, напишите боту любое сообщение
+        и нажмите «Определить мой ID».</p>
       <div class="grid2">
-        <div><label class="f">РўРѕРєРµРЅ Р±РѕС‚Р°</label>
+        <div><label class="f">Токен бота</label>
           <input class="t" id="tgToken" type="text" placeholder="123456:AA..."></div>
-        <div><label class="f">Р’Р°С€ chat_id</label>
-          <input class="t" id="tgChat" type="text" placeholder="РѕРїСЂРµРґРµР»РёС‚СЃСЏ СЃР°Рј"></div>
+        <div><label class="f">Ваш chat_id</label>
+          <input class="t" id="tgChat" type="text" placeholder="определится сам"></div>
       </div>
       <div class="row">
-        <button class="btn" id="tgDetect">РћРїСЂРµРґРµР»РёС‚СЊ РјРѕР№ ID</button>
-        <button class="btn" id="tgCheck">РџСЂРѕРІРµСЂРёС‚СЊ</button>
+        <button class="btn" id="tgDetect">Определить мой ID</button>
+        <button class="btn" id="tgCheck">Проверить</button>
         <span class="sp"></span>
-        <button class="btn" id="b4skip">РџСЂРѕРїСѓСЃС‚РёС‚СЊ</button>
-        <button class="btn primary" id="b4">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+        <button class="btn" id="b4skip">Пропустить</button>
+        <button class="btn primary" id="b4">Сохранить</button>
       </div>
       <div class="note" id="n4"></div>
     </div>
@@ -141,7 +140,7 @@
 
   <div class="fin">
     <button class="btn primary" id="finish" disabled
-      style="padding:13px 30px;font-size:15px">Р’СЃС‘ РіРѕС‚РѕРІРѕ, РѕС‚РєСЂС‹С‚СЊ РїСЂРёР»РѕР¶РµРЅРёРµ</button>
+      style="padding:13px 30px;font-size:15px">Всё готово, открыть приложение</button>
   </div>
 </div>
 
@@ -170,41 +169,41 @@
     open(next||4);
   }
 
-  /* ---- 1. Р±СЂР°СѓР·РµСЂ */
+  /* ---- 1. браузер */
   window.onInstall=function(event,message){
     if(event==='done'){ say('n1','ok',message); complete(1); }
     else if(event==='error'){ say('n1','err',message); $('b1').disabled=false;
-      $('b1').textContent='РџРѕРІС‚РѕСЂРёС‚СЊ СѓСЃС‚Р°РЅРѕРІРєСѓ'; }
+      $('b1').textContent='Повторить установку'; }
     else say('n1','info',message);
   };
   $('b1').onclick=function(){
-    this.disabled=true; this.innerHTML='<span class="sp-l"></span>РЎРєР°С‡РёРІР°СЋвЂ¦';
-    say('n1','info','РќР°С‡РёРЅР°СЋвЂ¦'); api().install_browser();
+    this.disabled=true; this.innerHTML='<span class="sp-l"></span>Скачиваю…';
+    say('n1','info','Начинаю…'); api().install_browser();
   };
   $('s1').onclick=function(){ complete(1); };
 
-  /* ---- 2. РІС…РѕРґ */
+  /* ---- 2. вход */
   window.onAuthEvent=function(event,message){
     if(event==='done'){ say('n2','ok',message); $('b2').disabled=false;
-      $('b2').textContent='Р’РѕР№С‚Рё Р·Р°РЅРѕРІРѕ'; complete(2); refresh(); }
+      $('b2').textContent='Войти заново'; complete(2); refresh(); }
     else if(event==='error'){ say('n2','err',message); $('b2').disabled=false;
-      $('b2').textContent='РџРѕРїСЂРѕР±РѕРІР°С‚СЊ СЃРЅРѕРІР°'; }
+      $('b2').textContent='Попробовать снова'; }
     else say('n2','info',message);
   };
   window.updateProgress=function(){};
   $('b2').onclick=function(){
-    this.disabled=true; this.innerHTML='<span class="sp-l"></span>РћС‚РєСЂС‹РІР°СЋ hh.ruвЂ¦';
+    this.disabled=true; this.innerHTML='<span class="sp-l"></span>Открываю hh.ru…';
     api().start_login();
   };
 
-  /* ---- 3. РїРёСЃСЊРјРѕ */
+  /* ---- 3. письмо */
   var t=null;
   function checkLetter(){
     api().letter_check($('letter').value,'letter').then(function(info){
       var n=info.variants||0;
       $('cnt').textContent = !$('letter').value.trim() ? ''
-        : info.ok ? 'РЈРЅРёРєР°Р»СЊРЅС‹С… РІР°СЂРёР°РЅС‚РѕРІ: '+num(n)
-        : 'РџРѕРєР° РµСЃС‚СЊ РѕС€РёР±РєР° вЂ” СЃРјРѕС‚СЂРёС‚Рµ РЅРёР¶Рµ.';
+        : info.ok ? 'Уникальных вариантов: '+num(n)
+        : 'Пока есть ошибка — смотрите ниже.';
       $('b3').disabled = !info.ok;
       if(info.ok) hide('n3'); else say('n3','err',(info.errors||[]).join('\n'));
     });
@@ -219,12 +218,12 @@
   };
   $('b3s').onclick=function(){
     api().letter_samples($('letter').value,'letter',2).then(function(list){
-      say('n3','info',(list||[]).join('\n\nвЂ” вЂ” вЂ”\n\n'));
+      say('n3','info',(list||[]).join('\n\n— — —\n\n'));
     });
   };
   $('b3').onclick=function(){
     api().letter_save($('letter').value,'letter').then(function(r){
-      if(r.status==='ok'){ say('n3','ok','РџРёСЃСЊРјРѕ СЃРѕС…СЂР°РЅРµРЅРѕ. Р’Р°СЂРёР°РЅС‚РѕРІ: '+num(r.variants));
+      if(r.status==='ok'){ say('n3','ok','Письмо сохранено. Вариантов: '+num(r.variants));
         complete(3); }
       else say('n3','err',r.message);
     });
@@ -234,19 +233,19 @@
   $('tgDetect').onclick=function(){
     api().detect_chat_id($('tgToken').value).then(function(r){
       if(r.status==='ok'){ $('tgChat').value=r.chat_id;
-        say('n4','ok','РќР°С€С‘Р»: '+(r.who||r.chat_id)); }
+        say('n4','ok','Нашёл: '+(r.who||r.chat_id)); }
       else say('n4','err',r.message);
     });
   };
   $('tgCheck').onclick=function(){
-    say('n4','info','РџСЂРѕРІРµСЂСЏСЋвЂ¦');
+    say('n4','info','Проверяю…');
     api().check_telegram($('tgToken').value,$('tgChat').value).then(function(r){
       say('n4',r.status==='ok'?'ok':'err',r.message);
     });
   };
   $('b4').onclick=function(){
     api().save_telegram($('tgToken').value,$('tgChat').value).then(function(r){
-      if(r.status==='ok'){ say('n4','ok','Telegram РїРѕРґРєР»СЋС‡С‘РЅ.'); complete(4); }
+      if(r.status==='ok'){ say('n4','ok','Telegram подключён.'); complete(4); }
       else say('n4','err',r.message);
     });
   };
@@ -254,15 +253,15 @@
 
   $('finish').onclick=function(){ api().finish_setup(); };
 
-  /* ---- СЃС‚Р°СЂС‚ */
+  /* ---- старт */
   function refresh(){
     return api().wizard_state().then(function(st){
       done[1]=!!st.browser; done[2]=!!st.authorized;
       done[3]=!!st.letter;  done[4]=!!st.telegram;
-      if(done[1]) say('n1','ok','Р‘СЂР°СѓР·РµСЂ СѓР¶Рµ СѓСЃС‚Р°РЅРѕРІР»РµРЅ.');
+      if(done[1]) say('n1','ok','Браузер уже установлен.');
       if(done[2]){
         var u=st.user||{};
-        say('n2','ok','Р’РѕС€Р»Рё РєР°Рє '+[u.last_name,u.first_name].filter(Boolean).join(' '));
+        say('n2','ok','Вошли как '+[u.last_name,u.first_name].filter(Boolean).join(' '));
       }
       var next=[1,2,3,4].filter(function(i){return !done[i];})[0];
       open(next||4);
@@ -280,5 +279,6 @@
   boot();
 })();
 </script>
+<script src="theme.js"></script>
 </body>
 </html>
