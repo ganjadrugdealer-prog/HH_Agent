@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "HH Agent"
-APP_VERSION = "0.3.0"
+APP_VERSION = "1.0.1"
 
 
 def _pin_browsers_path() -> None:
@@ -138,6 +138,13 @@ def create_window(tool, *, debug: bool = False) -> None:
         import threading
 
         threading.Thread(target=demo_worker, args=(api, tool), daemon=True).start()
+
+    try:
+        import telegram_bot
+        telegram_bot.start_bot_thread(api, tool)
+    except Exception:
+        import logging
+        logging.getLogger("hh_agent").exception("Failed to start telegram bot thread")
 
     webview.start(debug=debug, http_server=True)
 
