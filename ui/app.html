@@ -1,0 +1,1008 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>HH Agent</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --line2:#eef0f3; --soft:#f1f3f6;
+    --ink:#131722; --dim:#667085; --faint:#98a2b3;
+    --accent:#2563eb; --accent2:#1d4fd7;
+    --ok:#12854a; --okbg:#e8f6ee; --err:#b42318; --errbg:#fdeceb;
+    --warn:#8a5a00; --warnbg:#fff6e6;
+    --b1:#e8f0ff; --b2:#eaf7ee; --b3:#fdf0e3;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+    font:14px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+  button,input,select,textarea{font:inherit}
+
+  .shell{display:flex;height:100%}
+
+  /* ---------------- Р±РѕРєРѕРІРѕРµ РјРµРЅСЋ ---------------- */
+  .side{width:212px;flex:none;background:var(--card);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:16px 12px}
+  .brand{font-weight:750;font-size:16px;letter-spacing:-.02em;padding:4px 10px 16px;
+    display:flex;align-items:baseline;gap:7px}
+  .brand small{font-weight:500;font-size:11px;color:var(--faint);letter-spacing:0}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    border:0;background:transparent;color:var(--dim);font-size:13.5px;font-weight:600;
+    padding:9px 10px;border-radius:9px;cursor:pointer}
+  .nav button:hover{background:var(--soft);color:var(--ink)}
+  .nav button.on{background:var(--b1);color:var(--accent)}
+  .nav button .ic{width:17px;text-align:center;font-size:14px;flex:none}
+  .nav button .badge{margin-left:auto;font-size:10.5px;font-weight:700;padding:1px 6px;
+    border-radius:20px;background:var(--errbg);color:var(--err)}
+  .grow{flex:1}
+  .foot{padding:10px;font-size:11px;color:var(--faint)}
+
+  /* ---------------- С€Р°РїРєР° ---------------- */
+  .body{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{flex:none;display:flex;align-items:center;gap:12px;padding:14px 22px;
+    background:var(--card);border-bottom:1px solid var(--line)}
+  .top h1{margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em}
+  .prof{display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+  .dot.off{background:#c9ced6}
+  .prof select{border:1px solid var(--line);border-radius:9px;padding:7px 10px;
+    background:var(--card);color:var(--ink);font-weight:600;font-size:13px;min-width:160px}
+
+  main{flex:1;overflow:auto;padding:20px 22px 40px}
+  .screen{display:none;max-width:1000px}
+  .screen.on{display:block}
+
+  /* ---------------- РѕР±С‰РµРµ ---------------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;margin-bottom:14px}
+  .card h3{margin:0 0 12px;font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint)}
+  .card h3 .r{float:right;text-transform:none;letter-spacing:0;font-size:12px;
+    font-weight:500;color:var(--dim)}
+  .muted{color:var(--dim);font-size:13px;white-space:pre-line}
+  .row{display:flex;gap:10px;align-items:center}
+  .row.wrap{flex-wrap:wrap}
+  .sp{flex:1}
+
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:9px;padding:9px 15px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .btn:hover:not(:disabled){background:var(--soft)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover:not(:disabled){background:var(--accent2)}
+  .btn.danger{color:var(--err);border-color:#f3c9c5}
+  .btn.danger:hover:not(:disabled){background:var(--errbg)}
+  .btn.sm{padding:6px 11px;font-size:12.5px}
+
+  .note{font-size:13px;padding:10px 13px;border-radius:10px;margin-top:10px;
+    display:flex;gap:9px;align-items:flex-start;white-space:pre-wrap}
+  .note b{flex:none}
+  .note.ok{background:var(--okbg);color:var(--ok)}
+  .note.err{background:var(--errbg);color:var(--err)}
+  .note.warn{background:var(--warnbg);color:var(--warn)}
+  .note.info{background:var(--b1);color:#1e40af}
+  .hide{display:none !important}
+
+  .sp8{height:8px}
+  label.f{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:5px}
+  .f input[type=text],.f input[type=number],.f input[type=password],.f select,
+  input.t,select.t,textarea.t{width:100%;border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;background:var(--card);color:var(--ink)}
+  textarea.t{resize:vertical;font:inherit;min-height:74px}
+  input.t::placeholder{color:var(--faint)}
+  .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .field{min-width:0}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;
+    padding:7px 0}
+  .chk input{width:16px;height:16px;accent-color:var(--accent)}
+  .hint{font-size:12px;color:var(--faint);margin-top:5px}
+
+  /* ---------------- РіР»Р°РІРЅР°СЏ ---------------- */
+  .hero{display:flex;gap:14px;align-items:stretch;margin-bottom:14px}
+  .hero .card{flex:1;margin:0}
+  .runbox{display:flex;flex-direction:column;justify-content:center}
+  .btn.big{padding:15px 22px;font-size:15.5px;border-radius:12px;width:100%}
+  .acct{max-width:330px;flex:none !important}
+  .acct .name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:9px}
+  .acct .sub{font-size:12.5px;color:var(--dim);margin:3px 0 12px}
+
+  .acts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .act{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:15px 16px;text-align:left;cursor:pointer;display:block}
+  .act:hover:not(:disabled){background:var(--soft);border-color:#d3d8de}
+  .act:disabled{opacity:.5;cursor:default}
+  .act b{display:block;font-size:14px;font-weight:650;margin-bottom:3px}
+  .act small{display:block;color:var(--dim);font-size:12px;line-height:1.35}
+
+  .rep{display:flex;align-items:center;gap:12px;padding:10px 0;
+    border-bottom:1px solid var(--line2);font-size:13.5px}
+  .rep:last-child{border-bottom:0}
+  .rep .d{color:var(--dim);font-size:12.5px;width:120px;flex:none}
+  .rep .n{font-weight:650}
+  .rep .tag{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:var(--okbg);color:var(--ok)}
+  .rep .tag.bad{background:var(--errbg);color:var(--err)}
+
+  /* ---------------- СЂРµРґР°РєС‚РѕСЂ РїРёСЃРµРј ---------------- */
+  .tabs{display:flex;gap:4px;background:var(--soft);padding:3px;border-radius:9px}
+  .tabs button{border:0;background:transparent;color:var(--dim);font-size:13px;
+    font-weight:600;padding:6px 13px;border-radius:7px;cursor:pointer}
+  .tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(16,24,40,.08)}
+  .edwrap{display:flex;gap:14px;align-items:flex-start}
+  .edmain{flex:1;min-width:0}
+  .edside{width:270px;flex:none}
+  .stack{position:relative;height:330px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .stack pre,.stack textarea{position:absolute;inset:0;margin:0;padding:14px 16px;
+    border:0;outline:0;font:13.5px/1.62 "Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+    white-space:pre-wrap;word-break:break-word;overflow:auto;background:transparent}
+  .stack pre{pointer-events:none;color:var(--ink)}
+  .stack textarea{color:transparent;caret-color:var(--ink);resize:none}
+  .stack textarea::selection{background:#b9d3ff;color:transparent}
+  .blk{border-radius:4px;padding:0 1px}
+  .d0{background:var(--b1)} .d1{background:var(--b2)} .d2{background:var(--b3)}
+  .ph{background:#efe7ff;color:#5b21b6;border-radius:4px;padding:0 2px;font-weight:600}
+  .bad{background:#ffd7d3;color:var(--err);border-radius:4px;font-weight:700}
+  .big-n{font-size:25px;font-weight:750;letter-spacing:-.02em;line-height:1.1}
+  .big-n small{display:block;font-size:12px;font-weight:500;color:var(--dim);
+    margin-top:3px;letter-spacing:0}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{font-size:12px;border:1px solid var(--line);background:#fafbfc;color:#5b21b6;
+    border-radius:7px;padding:4px 8px;cursor:pointer;font-weight:600}
+  .chip:hover{background:#f3edff;border-color:#d9c9ff}
+  .card p.tip{margin:0 0 8px;font-size:12.5px;color:var(--dim)}
+  .card p.tip:last-child{margin-bottom:0}
+  code{background:var(--soft);border-radius:4px;padding:1px 4px;
+    font:12px "Cascadia Mono",Consolas,monospace;color:var(--ink)}
+  .sample{background:var(--card);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:10px;padding:11px 13px;
+    white-space:pre-wrap;font-size:13px;margin-top:9px}
+  .sample i{display:block;font-style:normal;font-size:10.5px;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+
+  /* ---------------- РѕС‚РєР»РёРєРё ---------------- */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint);padding:0 10px 9px 0}
+  td{padding:9px 10px 9px 0;border-top:1px solid var(--line2);vertical-align:top}
+  td a{color:var(--accent);text-decoration:none}
+  td a:hover{text-decoration:underline}
+  .st{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .st.active{background:var(--b1);color:#1e40af}
+  .st.invitation{background:var(--okbg);color:var(--ok)}
+  .st.discard{background:var(--errbg);color:var(--err)}
+  .st.other{background:var(--soft);color:var(--dim)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .kpi b{display:block;font-size:24px;font-weight:750;letter-spacing:-.02em}
+  .kpi small{color:var(--dim);font-size:12px}
+
+  .more{border:0;background:transparent;color:var(--accent);font-weight:600;
+    font-size:13px;cursor:pointer;padding:4px 0}
+  .sp-loader{display:inline-block;width:12px;height:12px;border:2px solid #cbd5e1;
+    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+    vertical-align:-1px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+<script src="theme.js"></script>
+</head>
+<body>
+<div class="shell">
+  <nav class="side">
+    <div class="brand">HH Agent <small id="ver"></small></div>
+    <div class="nav" id="nav">
+      <button data-s="home" class="on"><span class="ic">рџЏ </span>Р“Р»Р°РІРЅР°СЏ</button>
+      <button data-s="letter"><span class="ic">вњЌпёЏ</span>РЎРѕРїСЂРѕРІРѕРґРёС‚РµР»СЊРЅРѕРµ<span class="badge hide" id="navBadge">!</span></button>
+      <button data-s="search"><span class="ic">рџЋ›</span>РќР°СЃС‚СЂРѕР№РєРё РїРѕРёСЃРєР°</button>
+      <button data-s="replies"><span class="ic">рџ’¬</span>РћС‚РєР»РёРєРё</button>
+      <button data-s="settings"><span class="ic">вљ™пёЏ</span>РќР°СЃС‚СЂРѕР№РєРё</button>
+    </div>
+    <div class="grow"></div>
+    <div class="foot" id="foot"></div>
+  </nav>
+
+  <div class="body">
+    <header class="top">
+      <h1 id="title">Р“Р»Р°РІРЅР°СЏ</h1>
+      <div class="sp"></div>
+      <div class="prof">
+        <span class="dot off" id="pDot"></span>
+        <select id="pSel"></select>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- ============================ Р“Р›РђР’РќРђРЇ -->
+      <section class="screen on" id="s-home">
+        <div class="hero">
+          <div class="card acct">
+            <h3>РђРєРєР°СѓРЅС‚ hh.ru</h3>
+            <div class="name"><span class="dot off" id="aDot"></span><span id="aName">вЂ”</span></div>
+            <div class="sub" id="aSub">РџСЂРѕРІРµСЂСЏСЋвЂ¦</div>
+            <div class="row">
+              <button class="btn sm" id="aLogin">Р’РѕР№С‚Рё</button>
+              <button class="btn sm danger hide" id="aLogout">Р’С‹Р№С‚Рё</button>
+            </div>
+            <div class="note info hide" id="aNote"></div>
+          </div>
+
+          <div class="card runbox">
+            <h3>Р Р°СЃСЃС‹Р»РєР° РѕС‚РєР»РёРєРѕРІ</h3>
+            <button class="btn primary big" id="btnRun" disabled>Р—Р°РїСѓСЃС‚РёС‚СЊ СЂР°СЃСЃС‹Р»РєСѓ</button>
+            <div class="note warn hide" id="runWarn"></div>
+            <div class="hint" id="runHint"></div>
+          </div>
+        </div>
+
+        <div class="acts">
+          <button class="act" id="aBump"><b>рџ”ќ РџРѕРґРЅСЏС‚СЊ СЂРµР·СЋРјРµ</b>
+            <small>РџРѕРґРЅРёРјР°РµС‚ РІСЃРµ СЂРµР·СЋРјРµ РІ РїРѕРёСЃРєРµ. HH СЂР°Р·СЂРµС€Р°РµС‚ СЂР°Р· РІ 4 С‡Р°СЃР°.</small></button>
+          <button class="act" id="aClear"><b>рџ§№ РћС‚РєР°Р·С‹ РІ Р°СЂС…РёРІ</b>
+            <small>РЈР±РёСЂР°РµС‚ РѕС‚РєР°Р·С‹ РёР· Р°РєС‚РёРІРЅС‹С… РѕС‚РєР»РёРєРѕРІ, С‡С‚РѕР±С‹ СЃРїРёСЃРѕРє РЅРµ Р·Р°СЂР°СЃС‚Р°Р».</small></button>
+          <button class="act" id="aPing"><b>рџ’¬ РџРёРЅРіРё РїРѕ С‡Р°С‚Р°Рј</b>
+            <small>РќР°РїРѕРјРёРЅР°РЅРёРµ Рѕ СЃРµР±Рµ РІРѕ РІСЃРµ Р°РєС‚РёРІРЅС‹Рµ С‡Р°С‚С‹. РљР°Р¶РґРѕРјСѓ вЂ” СЃРІРѕР№ РІР°СЂРёР°РЅС‚.</small></button>
+        </div>
+        <div class="note hide" id="actNote"></div>
+
+        <div class="card">
+          <h3>РџРѕСЃР»РµРґРЅРёРµ РїСЂРѕРіРѕРЅС‹ <span class="r"><button class="more" id="openReports">РџР°РїРєР° СЃ РѕС‚С‡С‘С‚Р°РјРё</button></span></h3>
+          <div id="reports"><div class="muted">РџРѕРєР° РЅРё РѕРґРЅРѕРіРѕ РїСЂРѕРіРѕРЅР°.</div></div>
+        </div>
+      </section>
+
+      <!-- ============================ РџРРЎР¬РњРћ -->
+      <section class="screen" id="s-letter">
+        <div class="row" style="margin-bottom:14px">
+          <div class="tabs">
+            <button id="tabLetter" class="on">РЎРѕРїСЂРѕРІРѕРґРёС‚РµР»СЊРЅРѕРµ</button>
+            <button id="tabPing">РџРёРЅРіРё</button>
+          </div>
+          <div class="sp"></div>
+          <button class="btn" id="btnSamples">РџРѕРєР°Р·Р°С‚СЊ РїСЂРёРјРµСЂС‹</button>
+          <button class="btn primary" id="btnSave" disabled>РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+        </div>
+
+        <div class="edwrap">
+          <div class="edmain">
+            <div class="stack">
+              <pre id="hl"></pre>
+              <textarea id="ed" spellcheck="false"></textarea>
+            </div>
+            <div id="lStatus"></div>
+            <div id="samples"></div>
+          </div>
+
+          <aside class="edside">
+            <div class="card">
+              <h3>РЈРЅРёРєР°Р»СЊРЅС‹С… РІР°СЂРёР°РЅС‚РѕРІ</h3>
+              <div class="big-n" id="cnt">вЂ”<small id="cntNote">РќР°С‡РЅРёС‚Рµ РїРµС‡Р°С‚Р°С‚СЊ</small></div>
+            </div>
+            <div class="card">
+              <h3>РџРѕРґСЃС‚Р°РЅРѕРІРєРё</h3>
+              <div class="chips" id="chips"></div>
+              <p class="tip" style="margin-top:9px">РќР°Р¶РјРёС‚Рµ вЂ” РІСЃС‚Р°РІРёС‚СЃСЏ РІ С‚РµРєСЃС‚.
+                HH РїРѕРґСЃС‚Р°РІРёС‚ РЅР°СЃС‚РѕСЏС‰РёРµ Р·РЅР°С‡РµРЅРёСЏ РїСЂРё РѕС‚РїСЂР°РІРєРµ.</p>
+            </div>
+            <div class="card">
+              <h3>РљР°Рє РїРёСЃР°С‚СЊ</h3>
+              <p class="tip"><code>{РџСЂРёРІРµС‚|Р—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ}</code> вЂ” РєР°Р¶РґРѕРјСѓ СѓР№РґС‘С‚ СЃР»СѓС‡Р°Р№РЅС‹Р№ РІР°СЂРёР°РЅС‚.</p>
+              <p class="tip">Р‘Р»РѕРєРё РІРєР»Р°РґС‹РІР°СЋС‚СЃСЏ: <code>{Р”РѕР±СЂС‹Р№ РґРµРЅСЊ{!|,}|Р—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ}</code>.</p>
+              <p class="tip">РЎР»РµРґРёС‚Рµ Р·Р° РїР°РґРµР¶Р°РјРё: РІР°СЂРёР°РЅС‚С‹ РґРѕР»Р¶РЅС‹ СЃРєР»РµРёРІР°С‚СЊСЃСЏ РІ Р¶РёРІСѓСЋ С„СЂР°Р·Сѓ
+                РІ Р»СЋР±РѕРј СЃРѕС‡РµС‚Р°РЅРёРё.</p>
+              <p class="tip">Р—РЅР°Рє <code>%</code> СЃР°Рј РїРѕ СЃРµР±Рµ Р»РѕРјР°РµС‚ РѕС‚РїСЂР°РІРєСѓ. РќСѓР¶РµРЅ РїСЂРѕС†РµРЅС‚ вЂ”
+                РїРёС€РёС‚Рµ <code>%%</code>.</p>
+            </div>
+            <div class="card" id="tipsLetter">
+              <h3>Р§С‚Рѕ РїРёСЃР°С‚СЊ</h3>
+              <p class="tip">РџРµСЂРІР°СЏ СЃС‚СЂРѕРєР° СЂРµС€Р°РµС‚ РІСЃС‘: РєС‚Рѕ РІС‹ Рё РЅР° РєР°РєСѓСЋ РІР°РєР°РЅСЃРёСЋ.</p>
+              <p class="tip">РўСЂРё-С‡РµС‚С‹СЂРµ Р°Р±Р·Р°С†Р°. Р”Р»РёРЅРЅС‹Рµ РїРёСЃСЊРјР° РЅРµ РґРѕС‡РёС‚С‹РІР°СЋС‚.</p>
+              <p class="tip">РќРµ РїРµСЂРµСЃРєР°Р·С‹РІР°Р№С‚Рµ СЂРµР·СЋРјРµ вЂ” РЅР° РЅРµРіРѕ РµСЃС‚СЊ СЃСЃС‹Р»РєР°.</p>
+            </div>
+            <div class="card">
+              <h3>Р•С‰С‘</h3>
+              <div class="row">
+                <button class="btn sm" id="btnDefault" style="flex:1">РћР±СЂР°Р·РµС†</button>
+                <button class="btn sm" id="btnReload" style="flex:1">РћС‚РјРµРЅРёС‚СЊ</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============================ РќРђРЎРўР РћР™РљР РџРћРРЎРљРђ -->
+      <section class="screen" id="s-search">
+        <div class="card">
+          <h3>РЎС‚РѕРї-СЃР»РѕРІР°</h3>
+          <textarea id="fStop" class="t" rows="3"
+            placeholder="РїСЂРѕРґР°Р¶Рё, СЃС‚Р°Р¶РёСЂРѕРІРєР°, РІРѕР¶Р°С‚С‹Р№, Р±СѓС…РіР°Р»С‚РµСЂ"></textarea>
+          <div class="hint">Р§РµСЂРµР· Р·Р°РїСЏС‚СѓСЋ РёР»Рё СЃ РЅРѕРІРѕР№ СЃС‚СЂРѕРєРё. Р’Р°РєР°РЅСЃРёСЏ РѕС‚СЃРµРёРІР°РµС‚СЃСЏ,
+            РµСЃР»Рё СЃР»РѕРІРѕ РІСЃС‚СЂРµС‚РёР»РѕСЃСЊ <b>РІ РЅР°Р·РІР°РЅРёРё</b>. РЈС‡РёС‚С‹РІР°СЋС‚СЃСЏ СЃР»РѕРІРѕС„РѕСЂРјС‹:
+            В«РїСЂРѕРґР°Р¶РёВ» РїРѕР№РјР°РµС‚ В«РјРµРЅРµРґР¶РµСЂ РїРѕ РїСЂРѕРґР°Р¶Р°РјВ».</div>
+          <div id="stopPrev" class="note info hide"></div>
+        </div>
+
+        <div class="card">
+          <h3>РћСЃРЅРѕРІРЅС‹Рµ С„РёР»СЊС‚СЂС‹</h3>
+          <div class="fields">
+            <div class="field"><label class="f">Р—Р°СЂРїР»Р°С‚Р° РѕС‚, в‚Ѕ</label>
+              <input id="fSalary" class="t" type="number" placeholder="РЅРµ РІР°Р¶РЅРѕ"></div>
+            <div class="field"><label class="f">Р РµРіРёРѕРЅ</label>
+              <select id="fArea" class="t"></select></div>
+            <div class="field"><label class="f">РћРїС‹С‚ СЂР°Р±РѕС‚С‹</label>
+              <select id="fExp" class="t">
+                <option value="">Р›СЋР±РѕР№</option>
+                <option value="noExperience">РќРµС‚ РѕРїС‹С‚Р°</option>
+                <option value="between1And3">РћС‚ 1 РґРѕ 3 Р»РµС‚</option>
+                <option value="between3And6">РћС‚ 3 РґРѕ 6 Р»РµС‚</option>
+                <option value="moreThan6">Р‘РѕР»РµРµ 6 Р»РµС‚</option>
+              </select></div>
+            <div class="field"><label class="f">Р’Р°РєР°РЅСЃРёРё Р·Р° РїРѕСЃР»РµРґРЅРёРµ, РґРЅРµР№</label>
+              <input id="fPeriod" class="t" type="number" placeholder="РІСЃРµ"></div>
+          </div>
+          <label class="chk"><input type="checkbox" id="fRemote">РўРѕР»СЊРєРѕ СѓРґР°Р»С‘РЅРЅР°СЏ СЂР°Р±РѕС‚Р°</label>
+          <div class="hint">РџРѕРёСЃРєРѕРІРѕР№ СЃС‚СЂРѕРєРё Р·РґРµСЃСЊ РЅРµС‚ РЅР°РјРµСЂРµРЅРЅРѕ: РєР°Рє С‚РѕР»СЊРєРѕ РѕРЅР° Р·Р°РґР°РЅР°,
+            РґРІРёР¶РѕРє СѓС…РѕРґРёС‚ СЃ СЂРµРєРѕРјРµРЅРґР°С†РёР№ HH РЅР° РѕР±С‹С‡РЅС‹Р№ РїРѕРёСЃРє, Рё РїРѕРґР±РѕСЂРєР° СЃС‚Р°РЅРѕРІРёС‚СЃСЏ С…СѓР¶Рµ.
+            Р’СЃРµ С„РёР»СЊС‚СЂС‹ СЂР°Р±РѕС‚Р°СЋС‚ Рё РїРѕ СЂРµРєРѕРјРµРЅРґР°С†РёСЏРј.</div>
+        </div>
+
+        <button class="more" id="toggleMore">Р•С‰С‘ РЅР°СЃС‚СЂРѕР№РєРё в–ѕ</button>
+        <div class="card hide" id="moreBox" style="margin-top:10px">
+          <h3>РўРѕРЅРєР°СЏ РЅР°СЃС‚СЂРѕР№РєР°</h3>
+          <div class="fields">
+            <div class="field"><label class="f">РЎРѕСЂС‚РёСЂРѕРІРєР°</label>
+              <select id="fOrder" class="t">
+                <option value="">РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ</option>
+                <option value="publication_time">РЎРЅР°С‡Р°Р»Р° РЅРѕРІС‹Рµ</option>
+                <option value="salary_desc">Р—Р°СЂРїР»Р°С‚Р° РїРѕ СѓР±С‹РІР°РЅРёСЋ</option>
+                <option value="salary_asc">Р—Р°СЂРїР»Р°С‚Р° РїРѕ РІРѕР·СЂР°СЃС‚Р°РЅРёСЋ</option>
+                <option value="relevance">РџРѕ СЂРµР»РµРІР°РЅС‚РЅРѕСЃС‚Рё</option>
+              </select></div>
+            <div class="field"><label class="f">РњР°РєСЃРёРјСѓРј РѕС‚РєР»РёРєРѕРІ Р·Р° РїСЂРѕРіРѕРЅ</label>
+              <input id="fMax" class="t" type="number" placeholder="200"></div>
+            <div class="field"><label class="f">РЎС‚СЂР°РЅРёС† РїРѕРёСЃРєР°</label>
+              <input id="fPages" class="t" type="number" placeholder="20"></div>
+            <div class="field"><label class="f">Р’Р°РєР°РЅСЃРёР№ РЅР° СЃС‚СЂР°РЅРёС†Рµ</label>
+              <input id="fPer" class="t" type="number" placeholder="100"></div>
+          </div>
+          <label class="chk"><input type="checkbox" id="fOnlySalary">РўРѕР»СЊРєРѕ РІР°РєР°РЅСЃРёРё СЃ СѓРєР°Р·Р°РЅРЅРѕР№ Р·Р°СЂРїР»Р°С‚РѕР№</label>
+          <label class="chk"><input type="checkbox" id="fSkipTests" checked>РџСЂРѕРїСѓСЃРєР°С‚СЊ РІР°РєР°РЅСЃРёРё СЃ С‚РµСЃС‚Р°РјРё</label>
+          <div class="hint">РўРµСЃС‚С‹ С‚СЂРµР±СѓСЋС‚ РІС…РѕРґР° С‡РµСЂРµР· Р±СЂР°СѓР·РµСЂ Рё С‡Р°СЃС‚Рѕ СѓРїРёСЂР°СЋС‚СЃСЏ РІ РєР°РїС‡Сѓ.
+            РџР°СѓР·Р° РјРµР¶РґСѓ Р·Р°РїСЂРѕСЃР°РјРё Рє HH Р·Р°РґР°С‘С‚СЃСЏ СЃР»СѓС‡Р°Р№РЅРѕ (0,8вЂ“2,4 СЃ) Рё РЅРµ РЅР°СЃС‚СЂР°РёРІР°РµС‚СЃСЏ вЂ”
+            С„РёРєСЃРёСЂРѕРІР°РЅРЅС‹Р№ РёРЅС‚РµСЂРІР°Р» РІС‹РіР»СЏРґРёС‚ РєР°Рє СЂРѕР±РѕС‚.</div>
+        </div>
+
+        <div class="row" style="margin-top:14px">
+          <button class="btn primary" id="btnSaveSearch">РЎРѕС…СЂР°РЅРёС‚СЊ РЅР°СЃС‚СЂРѕР№РєРё</button>
+          <div class="sp"></div>
+          <button class="btn" id="btnDry">РҐРѕР»РѕСЃС‚РѕР№ РїСЂРѕРіРѕРЅ</button>
+        </div>
+        <div class="note hide" id="searchNote"></div>
+      </section>
+
+      <!-- ============================ РћРўРљР›РРљР -->
+      <section class="screen" id="s-replies">
+        <div class="kpis" id="kpis"></div>
+        <div class="card">
+          <h3>РћС‚РєР»РёРєРё <span class="r">
+            <button class="more" id="btnSync">РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ СЃ hh.ru</button></span></h3>
+          <div id="repNote"></div>
+          <div style="overflow:auto">
+            <table id="repTable">
+              <thead><tr><th style="width:96px">Р”Р°С‚Р°</th><th>Р’Р°РєР°РЅСЃРёСЏ</th>
+                <th style="width:210px">Р Р°Р±РѕС‚РѕРґР°С‚РµР»СЊ</th><th style="width:120px">РЎС‚Р°С‚СѓСЃ</th></tr></thead>
+              <tbody id="repBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ РќРђРЎРўР РћР™РљР -->
+      <section class="screen" id="s-settings">
+        <div class="card">
+          <h3>РџСЂРѕС„РёР»Рё</h3>
+          <div class="muted" style="margin-bottom:10px">РљР°Р¶РґС‹Р№ РїСЂРѕС„РёР»СЊ вЂ” РѕС‚РґРµР»СЊРЅС‹Р№ Р°РєРєР°СѓРЅС‚ hh.ru
+            СЃРѕ СЃРІРѕРёРј РїРёСЃСЊРјРѕРј, Р±Р°Р·РѕР№ Рё РѕС‚С‡С‘С‚Р°РјРё.</div>
+          <div class="row wrap">
+            <select id="setProf" class="t" style="max-width:280px"></select>
+            <button class="btn sm" id="setProfAdd">+ РќРѕРІС‹Р№</button>
+            <button class="btn sm" id="setProfImport">РРјРїРѕСЂС‚ РёР· РїР°РїРєРё Р±РѕС‚Р°</button>
+          </div>
+          <div class="note hide" id="profNote"></div>
+        </div>
+
+        <div class="card">
+          <h3>Telegram <span class="r">РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ</span></h3>
+          <div class="muted" style="margin-bottom:10px">РџСѓР»СЊС‚ Рё СѓРІРµРґРѕРјР»РµРЅРёСЏ РІ С‚РµР»РµС„РѕРЅ.
+            РЎРѕР·РґР°Р№С‚Рµ Р±РѕС‚Р° Сѓ <b>@BotFather</b> Рё РІСЃС‚Р°РІСЊС‚Рµ С‚РѕРєРµРЅ.</div>
+          <div class="fields">
+            <div class="field"><label class="f">РўРѕРєРµРЅ Р±РѕС‚Р°</label>
+              <input id="tgToken" class="t" type="text" placeholder="123456:AA..."></div>
+            <div class="field"><label class="f">Р’Р°С€ chat_id</label>
+              <input id="tgChat" class="t" type="text" placeholder="РЅР°Р¶РјРёС‚Рµ В«РћРїСЂРµРґРµР»РёС‚СЊВ»"></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn sm" id="tgDetect">РћРїСЂРµРґРµР»РёС‚СЊ РјРѕР№ ID</button>
+            <button class="btn sm" id="tgCheck">РџСЂРѕРІРµСЂРёС‚СЊ СЃРІСЏР·СЊ</button>
+            <div class="sp"></div>
+            <button class="btn sm" id="tgOff">РћС‚РєР»СЋС‡РёС‚СЊ</button>
+            <button class="btn sm primary" id="tgSave">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+          </div>
+          <div class="note hide" id="tgNote"></div>
+        </div>
+
+        <div class="card">
+          <h3>Р”РІРёР¶РѕРє Рё РґР°РЅРЅС‹Рµ</h3>
+          <div class="muted" id="engInfo">вЂ”</div>
+          <div class="row" style="margin-top:11px">
+            <button class="btn sm" id="openReports2">РџР°РїРєР° СЃ РѕС‚С‡С‘С‚Р°РјРё</button>
+            <button class="btn sm" id="openData">РџР°РїРєР° СЃ РґР°РЅРЅС‹РјРё</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>РђРєРєР°СѓРЅС‚ hh.ru</h3>
+          <div class="muted" id="setAcct">вЂ”</div>
+          <div class="row" style="margin-top:11px">
+            <button class="btn sm" id="setLogin">РЎРјРµРЅРёС‚СЊ Р°РєРєР°СѓРЅС‚</button>
+            <button class="btn sm danger" id="setLogout">Р’С‹Р№С‚Рё</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  var api = function () { return window.pywebview && window.pywebview.api; };
+  var $ = function (id) { return document.getElementById(id); };
+  var TITLES = {home:'Р“Р»Р°РІРЅР°СЏ', letter:'РЁР°Р±Р»РѕРЅС‹ СЃРѕРѕР±С‰РµРЅРёР№', search:'РќР°СЃС‚СЂРѕР№РєРё РїРѕРёСЃРєР°',
+                replies:'РћС‚РєР»РёРєРё', settings:'РќР°СЃС‚СЂРѕР№РєРё'};
+  var state = {};
+  var areasLoaded = false;
+  var running = false;
+
+  /* ================================================== СѓС‚РёР»РёС‚С‹ */
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function num(n){return (Number(n)||0).toLocaleString('ru-RU');}
+
+  function note(el, kind, text){
+    if(!text){ el.className='note hide'; el.textContent=''; return; }
+    el.className='note '+kind;
+    el.innerHTML='<b>'+(kind==='err'?'вњ•':kind==='warn'?'!':kind==='ok'?'вњ“':'i')+'</b><span></span>';
+    el.lastChild.textContent=text;
+  }
+
+  function fmtDate(s){
+    if(!s) return 'вЂ”';
+    var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+    return m ? m[3]+'.'+m[2]+'.'+m[1] : String(s).slice(0,10);
+  }
+
+  /* ================================================== РЅР°РІРёРіР°С†РёСЏ */
+  function show(name){
+    document.querySelectorAll('.screen').forEach(function(s){
+      s.classList.toggle('on', s.id === 's-'+name);
+    });
+    document.querySelectorAll('#nav button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.s === name);
+    });
+    $('title').textContent = TITLES[name] || name;
+    if(name==='letter') loadTemplate(kind);
+    if(name==='search') openSearch();
+    if(name==='replies') loadReplies();
+    if(name==='settings') fillSettings();
+  }
+  document.querySelectorAll('#nav button').forEach(function(b){
+    b.onclick = function(){ show(b.dataset.s); };
+  });
+
+  /* ================================================== РѕР±С‰РµРµ СЃРѕСЃС‚РѕСЏРЅРёРµ */
+  function refresh(){
+    if(!api()) return;
+    return api().app_state().then(function(st){
+      state = st || {};
+      $('ver').textContent = st.version || '';
+      $('foot').textContent = 'Р”РІРёР¶РѕРє ' + ((st.engine||{}).version || '?');
+
+      /* РїСЂРѕС„РёР»СЊ РІ С€Р°РїРєРµ */
+      var p = st.profiles || {profiles:[], active:''};
+      var sel = $('pSel'), sel2 = $('setProf');
+      [sel, sel2].forEach(function(s){ if(s) s.innerHTML=''; });
+      (p.profiles||[]).forEach(function(it){
+        [sel, sel2].forEach(function(s){
+          if(!s) return;
+          var o=document.createElement('option');
+          o.value=it.id; o.textContent=it.name + (it.authorized?'':'  (РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ)');
+          if(it.id===p.active) o.selected=true;
+          s.appendChild(o);
+        });
+      });
+
+      /* Р°РєРєР°СѓРЅС‚ */
+      var s = st.status || {};
+      var user = s.user || {};
+      var fio = [user.last_name, user.first_name].filter(Boolean).join(' ')
+             || user.email || '';
+      $('aDot').className = 'dot' + (s.authorized ? '' : ' off');
+      $('pDot').className = 'dot' + (s.authorized ? '' : ' off');
+      $('aName').textContent = s.authorized ? (fio || 'РђРІС‚РѕСЂРёР·РѕРІР°РЅ') : 'РќРµ Р°РІС‚РѕСЂРёР·РѕРІР°РЅ';
+      $('aSub').textContent = s.authorized
+        ? ('Р РµР·СЋРјРµ: ' + num((st.resumes||[]).length))
+        : (s.reason==='token_invalid' ? 'РўРѕРєРµРЅ Р±РѕР»СЊС€Рµ РЅРµ РґРµР№СЃС‚РІСѓРµС‚, РЅСѓР¶РµРЅ РЅРѕРІС‹Р№ РІС…РѕРґ'
+                                      : 'Р’РѕР№РґРёС‚Рµ С‡РµСЂРµР· hh.ru, С‡С‚РѕР±С‹ РЅР°С‡Р°С‚СЊ');
+      $('aLogin').classList.toggle('hide', !!s.authorized);
+      $('aLogout').classList.toggle('hide', !s.authorized);
+      $('setAcct').textContent = s.authorized
+        ? (fio + ' вЂ” СЂРµР·СЋРјРµ: ' + num((st.resumes||[]).length))
+        : 'РќРµ Р°РІС‚РѕСЂРёР·РѕРІР°РЅ';
+
+      /* РєРЅРѕРїРєР° Р·Р°РїСѓСЃРєР° */
+      var L = st.letter || {};
+      var ready = s.authorized && L.ok && !running;
+      $('btnRun').disabled = !ready;
+      $('navBadge').classList.toggle('hide', !!L.ok);
+      if(!L.ok){
+        note($('runWarn'),'warn', L.message || 'Р”РѕР±Р°РІСЊС‚Рµ СЃРѕРїСЂРѕРІРѕРґРёС‚РµР»СЊРЅРѕРµ РїРёСЃСЊРјРѕ');
+      } else if(!s.authorized){
+        note($('runWarn'),'warn','РЎРЅР°С‡Р°Р»Р° РІРѕР№РґРёС‚Рµ РІ Р°РєРєР°СѓРЅС‚ hh.ru');
+      } else {
+        note($('runWarn'),'',null);
+      }
+      $('runHint').textContent = L.ok
+        ? ('РџРёСЃСЊРјРѕ РіРѕС‚РѕРІРѕ: ' + num(L.variants) + ' РІР°СЂРёР°РЅС‚РѕРІ. Р—Р° РїСЂРѕРіРѕРЅ СѓР№РґС‘С‚ РЅРµ Р±РѕР»РµРµ '
+           + num((st.search||{}).max_responses || 200) + ' РѕС‚РєР»РёРєРѕРІ.')
+        : '';
+
+      /* Р±С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ */
+      ['aBump','aClear','aPing'].forEach(function(id){ $(id).disabled = !s.authorized; });
+
+      /* РѕС‚С‡С‘С‚С‹ */
+      renderReports(st.reports||[]);
+
+      /* РґРІРёР¶РѕРє */
+      var e = st.engine||{};
+      $('engInfo').textContent = 'hh-applicant-tool ' + (e.version||'?') +
+        (e.ok ? ' вЂ” СЃРѕРІРјРµСЃС‚РёРј СЃ РїСЂРёР»РѕР¶РµРЅРёРµРј' : ' вЂ” РќР•РЎРћР’РњР•РЎРўРРњ: ' + (e.problems||[]).join('; ')) +
+        '\nРџР°РїРєР° РґР°РЅРЅС‹С… РїСЂРѕС„РёР»СЏ: ' + (st.data_dir||'');
+      return st;
+    });
+  }
+
+  var RUN_STATUS = {ok:'Р·Р°РІРµСЂС€С‘РЅ', cancelled:'РїСЂРµСЂРІР°РЅ', error:'РѕС€РёР±РєР°', running:'РёРґС‘С‚'};
+
+  function repDate(s){
+    /* РѕС‚С‡С‘С‚ РЅР°Р·С‹РІР°РµС‚СЃСЏ 2026-09-10 11-20-33 */
+    var m=/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2})[-:](\d{2})/.exec(String(s||''));
+    return m ? m[3]+'.'+m[2]+'.'+m[1]+' '+m[4]+':'+m[5] : (s||'вЂ”');
+  }
+
+  function renderReports(list){
+    var box=$('reports');
+    if(!list || !list.length){
+      box.innerHTML='<div class="muted">РџРѕРєР° РЅРё РѕРґРЅРѕРіРѕ РїСЂРѕРіРѕРЅР°.</div>'; return;
+    }
+    box.innerHTML='';
+    list.slice(0,8).forEach(function(r){
+      var c = r.counts || r.counters || {};
+      var d=document.createElement('div'); d.className='rep';
+      d.innerHTML='<span class="d"></span><span class="n"></span>'
+                 +'<span class="muted" style="margin-left:12px"></span>'
+                 +'<span class="sp"></span><span class="tag"></span>';
+      d.children[0].textContent = repDate(r.date || r.started);
+      d.children[1].textContent = 'РћС‚РєР»РёРєРѕРІ: ' + num(c.applied || 0);
+      var extra = [];
+      if(c.filtered) extra.push('РѕС‚СЃРµСЏРЅРѕ ' + num(c.filtered));
+      if(c.seen_before) extra.push('СѓР¶Рµ Р±С‹Р»Рё ' + num(c.seen_before));
+      if(c.error) extra.push('РѕС€РёР±РѕРє ' + num(c.error));
+      d.children[2].textContent = extra.join(' В· ');
+      d.children[4].textContent = RUN_STATUS[r.status] || r.status || 'вЂ”';
+      if(r.status && r.status!=='ok') d.children[4].className='tag bad';
+      box.appendChild(d);
+    });
+  }
+
+  $('pSel').onchange = function(){
+    note($('actNote'),'info','РџРµСЂРµРєР»СЋС‡Р°СЋ РїСЂРѕС„РёР»СЊ, РїСЂРёР»РѕР¶РµРЅРёРµ РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЃСЏвЂ¦');
+    api().switch_profile(this.value);
+  };
+  $('setProf').onchange = function(){ api().switch_profile(this.value); };
+
+  /* ================================================== Р°РєРєР°СѓРЅС‚ */
+  window.onAuthEvent = function(event, message){
+    var box = $('aNote');
+    note(box, event==='done'?'ok':event==='error'?'err':'info', message);
+    box.classList.remove('hide');
+    if(event==='done'||event==='error') refresh();
+  };
+  window.updateProgress = function(){};
+
+  $('aLogin').onclick = $('setLogin').onclick = function(){
+    note($('aNote'),'info','РћС‚РєСЂС‹РІР°СЋ РѕРєРЅРѕ РІС…РѕРґР° hh.ruвЂ¦');
+    $('aNote').classList.remove('hide');
+    api().start_login();
+  };
+  $('aLogout').onclick = $('setLogout').onclick = function(){
+    if(!confirm('Р’С‹Р№С‚Рё РёР· Р°РєРєР°СѓРЅС‚Р° hh.ru? РўРѕРєРµРЅ Р±СѓРґРµС‚ СѓРґР°Р»С‘РЅ.')) return;
+    api().logout().then(refresh);
+  };
+
+  /* ================================================== Р·Р°РїСѓСЃРє */
+  function runApply(dry){
+    if(running) return;
+    running = true;
+    var b=$('btnRun');
+    b.disabled=true;
+    b.innerHTML='<span class="sp-loader"></span>'+(dry?'РҐРѕР»РѕСЃС‚РѕР№ РїСЂРѕРіРѕРЅвЂ¦':'РРґС‘С‚ СЂР°СЃСЃС‹Р»РєР°вЂ¦');
+    note($('actNote'),'info', dry
+      ? 'РҐРѕР»РѕСЃС‚РѕР№ РїСЂРѕРіРѕРЅ: СЃРјРѕС‚СЂРёРј, С‡С‚Рѕ РѕС‚СЃРµРµС‚СЃСЏ. РћС‚РєР»РёРєРё РЅРµ РѕС‚РїСЂР°РІР»СЏСЋС‚СЃСЏ.'
+      : 'Р Р°СЃСЃС‹Р»РєР° Р·Р°РїСѓС‰РµРЅР°. РџСЂРѕРіСЂРµСЃСЃ вЂ” РІ РѕС‚РґРµР»СЊРЅРѕРј РѕРєРЅРµ.');
+    $('actNote').classList.remove('hide');
+    api().start_apply(!!dry).then(function(r){
+      running=false;
+      b.innerHTML='Р—Р°РїСѓСЃС‚РёС‚СЊ СЂР°СЃСЃС‹Р»РєСѓ';
+      note($('actNote'), r&&r.status==='ok'?'ok':'err',
+        (r&&r.message) || (r&&r.status==='ok'?'РџСЂРѕРіРѕРЅ Р·Р°РІРµСЂС€С‘РЅ.':'РџСЂРѕРіРѕРЅ РЅРµ СѓРґР°Р»СЃСЏ.'));
+      refresh();
+    });
+  }
+  $('btnRun').onclick = function(){ runApply(false); };
+  $('btnDry').onclick = function(){ runApply(true); show('home'); };
+
+  function quick(btn, label, call, confirmText){
+    btn.onclick = function(){
+      if(confirmText && !confirm(confirmText)) return;
+      var old = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<b><span class="sp-loader"></span>'+label+'</b>';
+      call().then(function(r){
+        btn.disabled=false; btn.innerHTML=old;
+        note($('actNote'), r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Р“РѕС‚РѕРІРѕ');
+        $('actNote').classList.remove('hide');
+      });
+    };
+  }
+  quick($('aBump'),'РџРѕРґРЅРёРјР°СЋвЂ¦', function(){ return api().bump_resumes(); });
+  quick($('aClear'),'Р§РёС‰СѓвЂ¦', function(){ return api().clear_rejections(); });
+  quick($('aPing'),'Р Р°СЃСЃС‹Р»Р°СЋвЂ¦', function(){ return api().send_pings(''); },
+    'Р Р°Р·РѕСЃР»Р°С‚СЊ РЅР°РїРѕРјРёРЅР°РЅРёРµ РІРѕ Р’РЎР• Р°РєС‚РёРІРЅС‹Рµ С‡Р°С‚С‹ СЃ СЂР°Р±РѕС‚РѕРґР°С‚РµР»СЏРјРё?\n\n' +
+    'РўРµРєСЃС‚ Р±РµСЂС‘С‚СЃСЏ РёР· РІРєР»Р°РґРєРё В«РџРёРЅРіРёВ». Р’ РєР°Р¶РґС‹Р№ С‡Р°С‚ СѓС…РѕРґРёС‚ СЃРІРѕР№ РІР°СЂРёР°РЅС‚.\n' +
+    'РћС‚РјРµРЅРёС‚СЊ СЂР°СЃСЃС‹Р»РєСѓ РЅРµР»СЊР·СЏ.');
+
+  $('openReports').onclick = $('openReports2').onclick = function(){ api().open_reports_folder(); };
+  $('openData').onclick = function(){ api().open_data_folder(); };
+
+  /* ================================================== СЂРµРґР°РєС‚РѕСЂ РїРёСЃРµРј */
+  var kind='letter', saved='', timer=null;
+
+  function highlight(text){
+    var out='', depth=0, i=0, badPos={}, stack=[];
+    for(i=0;i<text.length;i++){
+      if(text[i]==='{') stack.push(i);
+      else if(text[i]==='}'){ if(stack.length) stack.pop(); else badPos[i]=1; }
+    }
+    stack.forEach(function(p){ badPos[p]=1; });
+    i=0;
+    while(i<text.length){
+      var ch=text[i];
+      if(badPos[i]){ out+='<span class="bad">'+esc(ch)+'</span>'; i++; continue; }
+      if(ch==='{'){ out+='<span class="blk d'+(depth%3)+'">'+esc(ch); depth++; i++; continue; }
+      if(ch==='}'){ depth=Math.max(0,depth-1); out+=esc(ch)+'</span>'; i++; continue; }
+      if(ch==='%'){
+        var m=/^%\(\w+\)s/.exec(text.slice(i));
+        if(m){ out+='<span class="ph">'+esc(m[0])+'</span>'; i+=m[0].length; continue; }
+        if(text.slice(i,i+2)==='%%'){ out+='%%'; i+=2; continue; }
+        out+='<span class="bad">%</span>'; i++; continue;
+      }
+      out+=esc(ch); i++;
+    }
+    while(depth-->0) out+='</span>';
+    return out+'\n';
+  }
+  function paint(){ $('hl').innerHTML=highlight($('ed').value); $('hl').scrollTop=$('ed').scrollTop; }
+
+  function renderCheck(info){
+    var box=$('lStatus'); box.innerHTML='';
+    function add(cls,text){ var d=document.createElement('div'); note(d,cls,text); box.appendChild(d); }
+    (info.errors||[]).forEach(function(e){ add('err',e); });
+    (info.warnings||[]).forEach(function(w){ add('warn',w); });
+    if(info.ok && !(info.warnings||[]).length) add('ok','РЁР°Р±Р»РѕРЅ РІ РїРѕСЂСЏРґРєРµ.');
+    var n=info.variants||0;
+    $('cnt').firstChild.nodeValue = n>0 ? num(n) : 'вЂ”';
+    $('cntNote').textContent = !$('ed').value.trim() ? 'РќР°С‡РЅРёС‚Рµ РїРµС‡Р°С‚Р°С‚СЊ'
+      : !info.ok ? 'РџРѕРєР° РµСЃС‚СЊ РѕС€РёР±РєР°'
+      : n>=1000 ? 'РЎ Р·Р°РїР°СЃРѕРј' : n>=100 ? 'РҐРѕСЂРѕС€Рѕ'
+      : n>1 ? 'Р”РѕР±Р°РІСЊС‚Рµ Р±Р»РѕРєРѕРІ' : 'Р’СЃРµ РїРёСЃСЊРјР° Р±СѓРґСѓС‚ РѕРґРёРЅР°РєРѕРІС‹РјРё';
+    $('btnSave').disabled = !info.ok || $('ed').value===saved;
+  }
+
+  function checkNow(){
+    if(!api()) return;
+    api().letter_check($('ed').value, kind).then(function(info){
+      renderCheck(info);
+      if($('samples').children.length) showSamples(info.samples);
+    });
+  }
+  function onInput(){ paint(); clearTimeout(timer); timer=setTimeout(checkNow,280); }
+
+  function showSamples(list){
+    var box=$('samples'); box.innerHTML='';
+    (list||[]).forEach(function(s,i){
+      var d=document.createElement('div'); d.className='sample';
+      var t=document.createElement('i'); t.textContent='Р’Р°СЂРёР°РЅС‚ '+(i+1);
+      var p=document.createElement('span'); p.textContent=s;
+      d.appendChild(t); d.appendChild(p); box.appendChild(d);
+    });
+  }
+  $('btnSamples').onclick=function(){
+    if($('samples').children.length){ $('samples').innerHTML=''; return; }
+    api().letter_samples($('ed').value, kind, 3).then(showSamples);
+  };
+
+  function insert(text){
+    var ed=$('ed'), a=ed.selectionStart, b=ed.selectionEnd;
+    ed.value=ed.value.slice(0,a)+text+ed.value.slice(b);
+    ed.selectionStart=ed.selectionEnd=a+text.length;
+    ed.focus(); onInput();
+  }
+
+  function loadTemplate(next){
+    kind = next==='ping' ? 'ping' : 'letter';
+    $('tabLetter').className = kind==='letter'?'on':'';
+    $('tabPing').className = kind==='ping'?'on':'';
+    $('tipsLetter').style.display = kind==='letter'?'':'none';
+    $('samples').innerHTML='';
+    api().letter_state(kind).then(function(st){
+      saved = st.text || '';
+      $('ed').value = saved;
+      $('ed').placeholder = kind==='ping'
+        ? 'РљРѕСЂРѕС‚РєРѕРµ РЅР°РїРѕРјРёРЅР°РЅРёРµ Рѕ СЃРµР±Рµ. Р’Р°СЂРёР°РЅС‚РѕРІ РЅСѓР¶РЅРѕ РјРЅРѕРіРѕ: РІ РѕРґРёРЅ С‡Р°С‚ РїРёРЅРі СѓС…РѕРґРёС‚ РЅРµ СЂР°Р·.'
+        : 'РќР°РїРёС€РёС‚Рµ РїРёСЃСЊРјРѕ. Р’Р°СЂРёР°РЅС‚С‹ СЃР»РѕРІ Р±РµСЂРёС‚Рµ РІ С„РёРіСѓСЂРЅС‹Рµ СЃРєРѕР±РєРё: {Р—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ|Р”РѕР±СЂС‹Р№ РґРµРЅСЊ}';
+      var box=$('chips'); box.innerHTML='';
+      (st.placeholders||[]).forEach(function(name){
+        var b=document.createElement('button'); b.className='chip'; b.textContent=name;
+        b.onclick=function(){ insert('%('+name+')s'); };
+        box.appendChild(b);
+      });
+      paint(); checkNow();
+    });
+  }
+  $('tabLetter').onclick=function(){ loadTemplate('letter'); };
+  $('tabPing').onclick=function(){ loadTemplate('ping'); };
+  $('btnDefault').onclick=function(){
+    api().letter_default(kind).then(function(t){ $('ed').value=t; onInput(); });
+  };
+  $('btnReload').onclick=function(){ $('ed').value=saved; onInput(); };
+  $('btnSave').onclick=function(){
+    var text=$('ed').value;
+    $('btnSave').disabled=true;
+    api().letter_save(text, kind).then(function(r){
+      if(r.status==='ok'){
+        saved=text;
+        var box=$('lStatus'); box.innerHTML='';
+        var d=document.createElement('div');
+        note(d,'ok','РЎРѕС…СЂР°РЅРµРЅРѕ. Р’Р°СЂРёР°РЅС‚РѕРІ: '+num(r.variants||0));
+        box.appendChild(d);
+        refresh();
+      } else renderCheck(r);
+    });
+  };
+  $('ed').addEventListener('input', onInput);
+  $('ed').addEventListener('scroll', function(){ $('hl').scrollTop=this.scrollTop; });
+  $('ed').addEventListener('keydown', function(e){
+    if((e.ctrlKey||e.metaKey) && e.key==='s'){ e.preventDefault(); $('btnSave').click(); }
+  });
+
+  /* ================================================== РЅР°СЃС‚СЂРѕР№РєРё РїРѕРёСЃРєР° */
+  function openSearch(){
+    var s = state.search || {};
+    $('fStop').value = s.stop_words || '';
+    $('fSalary').value = s.salary || '';
+    $('fExp').value = s.experience || '';
+    $('fPeriod').value = s.period || '';
+    $('fRemote').checked = !!s.remote;
+    $('fOrder').value = s.order_by || '';
+    $('fMax').value = s.max_responses || '';
+    $('fPages').value = s.total_pages || '';
+    $('fPer').value = s.per_page || '';
+    $('fOnlySalary').checked = !!s.only_with_salary;
+    $('fSkipTests').checked = s.skip_tests !== false;
+    if(!areasLoaded){
+      areasLoaded = true;
+      var sel=$('fArea');
+      sel.innerHTML='<option value="">Р—Р°РіСЂСѓР¶Р°СЋ СЃРїРёСЃРѕРє СЂРµРіРёРѕРЅРѕРІвЂ¦</option>';
+      api().areas_list().then(function(list){
+        sel.innerHTML='<option value="">Р›СЋР±РѕР№ СЂРµРіРёРѕРЅ</option>';
+        (list||[]).forEach(function(a){
+          var o=document.createElement('option'); o.value=a.id; o.textContent=a.name;
+          sel.appendChild(o);
+        });
+        sel.value = (state.search||{}).area || '';
+      });
+    } else {
+      $('fArea').value = s.area || '';
+    }
+    previewStop();
+  }
+
+  function previewStop(){
+    var raw=$('fStop').value.trim();
+    var box=$('stopPrev');
+    if(!raw){ box.className='note info hide'; return; }
+    api().stopwords_preview(raw).then(function(r){
+      if(!r || !r.words || !r.words.length){ box.className='note info hide'; return; }
+      box.className='note info';
+      box.innerHTML='<b>i</b><span></span>';
+      box.lastChild.textContent='РћС‚СЃРµСЋС‚СЃСЏ РІР°РєР°РЅСЃРёРё, РІ РЅР°Р·РІР°РЅРёРё РєРѕС‚РѕСЂС‹С… РµСЃС‚СЊ: '
+        + r.words.join(', ') + '. РќР°РїСЂРёРјРµСЂ: ' + (r.examples||[]).join(' В· ');
+    });
+  }
+  var stopTimer=null;
+  $('fStop').addEventListener('input', function(){
+    clearTimeout(stopTimer); stopTimer=setTimeout(previewStop, 400);
+  });
+
+  $('toggleMore').onclick=function(){
+    var box=$('moreBox'), open=box.classList.toggle('hide');
+    this.textContent = open ? 'Р•С‰С‘ РЅР°СЃС‚СЂРѕР№РєРё в–ѕ' : 'РЎРІРµСЂРЅСѓС‚СЊ в–ґ';
+  };
+
+  function collectSearch(){
+    return {
+      stop_words: $('fStop').value,
+      salary: $('fSalary').value ? Number($('fSalary').value) : null,
+      area: $('fArea').value || null,
+      experience: $('fExp').value || null,
+      period: $('fPeriod').value ? Number($('fPeriod').value) : null,
+      remote: $('fRemote').checked,
+      order_by: $('fOrder').value || null,
+      max_responses: $('fMax').value ? Number($('fMax').value) : null,
+      total_pages: $('fPages').value ? Number($('fPages').value) : null,
+      per_page: $('fPer').value ? Number($('fPer').value) : null,
+      only_with_salary: $('fOnlySalary').checked,
+      skip_tests: $('fSkipTests').checked
+    };
+  }
+  $('btnSaveSearch').onclick=function(){
+    api().save_search(collectSearch()).then(function(r){
+      note($('searchNote'), r&&r.status==='ok'?'ok':'err',
+        (r&&r.message)||'РќР°СЃС‚СЂРѕР№РєРё СЃРѕС…СЂР°РЅРµРЅС‹.');
+      $('searchNote').classList.remove('hide');
+      refresh();
+    });
+  };
+
+  /* ================================================== РѕС‚РєР»РёРєРё */
+  var STATES={active:'Р°РєС‚РёРІРµРЅ',invitation:'РїСЂРёРіР»Р°С€РµРЅРёРµ',response:'РѕС‚РєР»РёРє',
+              discard:'РѕС‚РєР°Р·',discard_no_appropriate_vacancies:'РѕС‚РєР°Р·',
+              hidden:'СЃРєСЂС‹С‚'};
+  function stateClass(s){
+    if(!s) return 'other';
+    if(s.indexOf('invitation')===0) return 'invitation';
+    if(s.indexOf('discard')===0) return 'discard';
+    if(s==='active'||s==='response') return 'active';
+    return 'other';
+  }
+  function loadReplies(){
+    api().stats().then(function(st){
+      var k=$('kpis'); k.innerHTML='';
+      [['Р’СЃРµРіРѕ РѕС‚РєР»РёРєРѕРІ', st.total||0],
+       ['РџСЂРёРіР»Р°С€РµРЅРёР№', st.invitations||0],
+       ['РћС‚РєР°Р·РѕРІ', st.discards||0],
+       ['РћС‚СЃРµСЏРЅРѕ С„РёР»СЊС‚СЂРѕРј', st.skipped||0]].forEach(function(p){
+        var d=document.createElement('div'); d.className='kpi';
+        d.innerHTML='<b></b><small></small>';
+        d.children[0].textContent=num(p[1]); d.children[1].textContent=p[0];
+        k.appendChild(d);
+      });
+    });
+    api().negotiations().then(function(rows){
+      var b=$('repBody'); b.innerHTML='';
+      if(!rows || !rows.length){
+        note($('repNote'),'info','РџСѓСЃС‚Рѕ. РќР°Р¶РјРёС‚Рµ В«РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ СЃ hh.ruВ» вЂ” '
+          + 'РїСЂРёР»РѕР¶РµРЅРёРµ Р·Р°Р±РµСЂС‘С‚ РѕС‚РєР»РёРєРё РІРјРµСЃС‚Рµ СЃ РЅР°Р·РІР°РЅРёСЏРјРё РІР°РєР°РЅСЃРёР№.');
+        $('repNote').classList.remove('hide');
+        return;
+      }
+      note($('repNote'),'',null);
+      rows.forEach(function(r){
+        var tr=document.createElement('tr');
+        var td=function(){ var e=document.createElement('td'); tr.appendChild(e); return e; };
+        td().textContent = fmtDate(r.created_at);
+        var v=td();
+        if(r.vacancy_url){
+          var a=document.createElement('a'); a.href='#';
+          a.textContent = r.vacancy_name || ('Р’Р°РєР°РЅСЃРёСЏ ' + r.vacancy_id);
+          a.onclick=function(e){ e.preventDefault(); api().open_external(r.vacancy_url); };
+          v.appendChild(a);
+        } else v.textContent = r.vacancy_name || ('Р’Р°РєР°РЅСЃРёСЏ ' + r.vacancy_id);
+        td().textContent = r.employer_name || 'вЂ”';
+        var s=td();
+        var sp=document.createElement('span');
+        sp.className='st '+stateClass(r.state);
+        sp.textContent = STATES[r.state] || r.state || 'вЂ”';
+        s.appendChild(sp);
+        b.appendChild(tr);
+      });
+    });
+  }
+  $('btnSync').onclick=function(){
+    var b=this; b.textContent='РЎРёРЅС…СЂРѕРЅРёР·РёСЂСѓСЋвЂ¦'; b.disabled=true;
+    api().sync_negotiations().then(function(r){
+      b.textContent='РЎРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ СЃ hh.ru'; b.disabled=false;
+      note($('repNote'), r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Р“РѕС‚РѕРІРѕ');
+      $('repNote').classList.remove('hide');
+      loadReplies();
+    });
+  };
+
+  /* ================================================== РЅР°СЃС‚СЂРѕР№РєРё */
+  function fillSettings(){
+    var tg = state.telegram || {};
+    $('tgToken').value = tg.bot_token || '';
+    $('tgChat').value = tg.chat_id || '';
+  }
+  $('tgDetect').onclick=function(){
+    api().detect_chat_id($('tgToken').value).then(function(r){
+      if(r.status==='ok'){ $('tgChat').value=r.chat_id;
+        note($('tgNote'),'ok','РќР°С€С‘Р»: '+(r.who||r.chat_id)); }
+      else note($('tgNote'),'err',r.message);
+      $('tgNote').classList.remove('hide');
+    });
+  };
+  $('tgCheck').onclick=function(){
+    note($('tgNote'),'info','РџСЂРѕРІРµСЂСЏСЋвЂ¦'); $('tgNote').classList.remove('hide');
+    api().check_telegram($('tgToken').value, $('tgChat').value).then(function(r){
+      note($('tgNote'), r.status==='ok'?'ok':'err', r.message);
+    });
+  };
+  $('tgSave').onclick=function(){
+    api().save_telegram($('tgToken').value, $('tgChat').value).then(function(r){
+      note($('tgNote'), r.status==='ok'?'ok':'err', r.status==='ok'?'РЎРѕС…СЂР°РЅРµРЅРѕ.':r.message);
+      $('tgNote').classList.remove('hide'); refresh();
+    });
+  };
+  $('tgOff').onclick=function(){
+    api().skip_telegram().then(function(){
+      $('tgToken').value=''; $('tgChat').value='';
+      note($('tgNote'),'ok','Telegram РѕС‚РєР»СЋС‡С‘РЅ.'); $('tgNote').classList.remove('hide');
+      refresh();
+    });
+  };
+
+  $('setProfAdd').onclick=function(){
+    var name=prompt('РќР°Р·РІР°РЅРёРµ РЅРѕРІРѕРіРѕ РїСЂРѕС„РёР»СЏ (РЅР°РїСЂРёРјРµСЂ, В«РќР°С‚Р°С€Р°В»)');
+    if(!name) return;
+    api().add_profile(name).then(function(r){
+      if(r&&r.status==='error'){ note($('profNote'),'err',r.message);
+        $('profNote').classList.remove('hide'); return; }
+      note($('profNote'),'info','РџСЂРѕС„РёР»СЊ СЃРѕР·РґР°РЅ, РїРµСЂРµРєР»СЋС‡Р°СЋСЃСЊвЂ¦');
+      $('profNote').classList.remove('hide');
+    });
+  };
+  $('setProfImport').onclick=function(){
+    var src=prompt('РџСѓС‚СЊ Рє РїР°РїРєРµ РїСЂРѕС„РёР»СЏ Telegram-Р±РѕС‚Р°\nРЅР°РїСЂРёРјРµСЂ: C:\\HH_SCAM\\1_Anna_profile');
+    if(!src) return;
+    var name=prompt('РљР°Рє РЅР°Р·РІР°С‚СЊ СЌС‚РѕС‚ РїСЂРѕС„РёР»СЊ?','РРјРїРѕСЂС‚');
+    if(!name) return;
+    note($('profNote'),'info','РљРѕРїРёСЂСѓСЋвЂ¦'); $('profNote').classList.remove('hide');
+    api().import_profile(name, src).then(function(r){
+      if(!r||r.status==='error'){ note($('profNote'),'err',(r&&r.message)||'РќРµ РІС‹С€Р»Рѕ'); return; }
+      note($('profNote'),'ok','РРјРїРѕСЂС‚РёСЂРѕРІР°РЅРѕ: '+(r.copied||[]).join(', ')+'. РџРµСЂРµРєР»СЋС‡Р°СЋСЃСЊвЂ¦');
+    });
+  };
+
+  /* ================================================== СЃС‚Р°СЂС‚ */
+  function boot(){
+    if(!api()){ setTimeout(boot,200); return; }
+    try { api().ui_ready('app','v1'); } catch(e){}
+    refresh().then(function(){ show('home'); });
+    setInterval(function(){ if(!running) refresh(); }, 20000);
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

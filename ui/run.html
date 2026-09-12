@@ -1,0 +1,294 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>РџСЂРѕРіРѕРЅ</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#131722; --muted:#6b7280; --line:#e3e6ea;
+    --accent:#2563eb; --ok:#12854a; --ok-bg:#e8f6ee; --warn:#9a5b00; --warn-bg:#fff6e6;
+    --err:#b42318; --err-bg:#fdeceb;
+    --grey-bg:#f1f2f4;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
+    font:14.5px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 20px 0;flex:none}
+  .top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;letter-spacing:-.01em}
+  .state{font-size:13px;font-weight:600;padding:2px 10px;border-radius:20px;
+    background:#e8eefc;color:var(--accent)}
+  .state.ok{background:var(--ok-bg);color:var(--ok)}
+  .state.err{background:var(--err-bg);color:var(--err)}
+  .state.cancel{background:var(--warn-bg);color:var(--warn)}
+  .clock{margin-left:auto;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+
+  .tiles{display:flex;gap:10px;margin:14px 0 0;overflow-x:auto;padding-bottom:14px}
+  .tile{flex:1;min-width:104px;background:var(--grey-bg);border-radius:10px;padding:9px 12px}
+  .tile b{display:block;font-size:21px;line-height:1.15;font-variant-numeric:tabular-nums}
+  .tile span{font-size:11.5px;color:var(--muted);display:block;margin-top:1px}
+  .tile.hit b{color:var(--ok)} .tile.stop b{color:var(--warn)}
+  .tile.bad b{color:var(--err)}
+
+  .tabs{display:flex;gap:2px;margin-top:2px}
+  .tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:8px 12px;
+    font:inherit;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+
+  main{flex:1;overflow:auto;padding:14px 20px 24px}
+  .empty{color:var(--muted);text-align:center;padding:50px 20px;font-size:14px}
+
+  .ev{display:flex;gap:11px;align-items:flex-start;background:var(--card);
+    border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:9px;padding:9px 13px;margin-bottom:7px}
+  .ev .ic{font-size:15px;line-height:1.35;flex:none;width:20px;text-align:center}
+  .ev .body{min-width:0;flex:1}
+  .ev .ttl{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ev .meta{color:var(--muted);font-size:12.5px;margin-top:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ev .t{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums;flex:none;padding-top:2px}
+  .ev a{color:var(--accent);text-decoration:none}
+  .ev a:hover{text-decoration:underline}
+  .ev.applied{border-left-color:var(--ok)}
+  .ev.filtered,.ev.blacklisted{border-left-color:#e0a415}
+  .ev.error,.ev.limit,.ev.rejected{border-left-color:var(--err)}
+  .ev.resume_start,.ev.resume_done,.ev.all_done{border-left-color:var(--accent);background:#f7f9ff}
+  .ev.seen_before{opacity:.7}
+  .money{color:var(--ok);font-weight:600}
+
+  .rep{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;margin-bottom:14px}
+  .rep h2{font-size:15px;margin:0 0 14px}
+  .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--grey-bg);margin-bottom:12px}
+  .bar i{display:block;height:100%}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted)}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:6px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 13px;
+    font-size:13.5px;margin-bottom:14px}
+
+  footer{flex:none;background:var(--card);border-top:1px solid var(--line);
+    padding:11px 20px;display:flex;gap:10px;align-items:center}
+  button.act{font:inherit;font-weight:600;border:0;border-radius:8px;padding:8px 16px;
+    background:var(--accent);color:#fff;cursor:pointer}
+  button.act:hover{background:#1d4ed8}
+  button.act.danger{background:var(--err)} button.act.danger:hover{background:#911c13}
+  button.act.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  button.act.ghost:hover{background:#f0f1f3;color:var(--ink)}
+  button.act:disabled{opacity:.45;cursor:default}
+  .grow{flex:1}
+  .said{color:var(--muted);font-size:13px}
+  label.chk{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer}
+</style>
+<script src="theme.js"></script>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>РџСЂРѕРіРѕРЅ</h1>
+    <span class="state" id="state">РёРґС‘С‚вЂ¦</span>
+    <span class="clock" id="clock">00:00</span>
+  </div>
+  <div class="tiles">
+    <div class="tile hit"><b id="c_applied">0</b><span>РѕС‚РєР»РёРєРѕРІ</span></div>
+    <div class="tile stop"><b id="c_filtered">0</b><span>СЃС‚РѕРї-СЃР»РѕРІР°</span></div>
+    <div class="tile"><b id="c_seen_before">0</b><span>СѓР¶Рµ Р±С‹Р»Рё</span></div>
+    <div class="tile bad"><b id="c_rejected">0</b><span>РѕС‚РєР°Р· СЃСЂР°Р·Сѓ</span></div>
+    <div class="tile bad"><b id="c_error">0</b><span>РѕС€РёР±РѕРє</span></div>
+  </div>
+  <div class="tabs">
+    <button class="on" data-tab="feed" onclick="tab('feed')">Р›РµРЅС‚Р°</button>
+    <button data-tab="report" onclick="tab('report')">РћС‚С‡С‘С‚</button>
+  </div>
+</header>
+
+<main>
+  <div id="feed"><div class="empty">Р–РґСѓ РїРµСЂРІС‹С… СЃРѕР±С‹С‚РёР№вЂ¦</div></div>
+  <div id="report" style="display:none"><div class="empty">РћС‚С‡С‘С‚ РїРѕСЏРІРёС‚СЃСЏ, РєРѕРіРґР° РїСЂРѕРіРѕРЅ Р·Р°РєРѕРЅС‡РёС‚СЃСЏ.</div></div>
+</main>
+
+<footer>
+  <label class="chk"><input type="checkbox" id="onlyImportant" onchange="rerender()"> С‚РѕР»СЊРєРѕ РІР°Р¶РЅРѕРµ</label>
+  <label class="chk"><input type="checkbox" id="autoscroll" checked> РїСЂРѕРєСЂСѓС‡РёРІР°С‚СЊ</label>
+  <span class="grow"></span>
+  <span class="said" id="said"></span>
+  <button class="act ghost" id="btnFolder" onclick="openFolder()">РџР°РїРєР° СЃ РѕС‚С‡С‘С‚Р°РјРё</button>
+  <button class="act danger" id="btnStop" onclick="stop()">РћСЃС‚Р°РЅРѕРІРёС‚СЊ</button>
+</footer>
+
+<script>
+let EV = [], COUNTS = {}, REPORT = null, TAB = 'feed', FINISHED = false, T0 = Date.now();
+const $ = id => document.getElementById(id);
+
+const IC = {
+  applied:'рџ“Ё', applied_test:'рџ“Ё', applied_captcha:'рџ“Ё', filtered:'рџљ«',
+  blacklisted:'рџљ«', seen_before:'вЏ©', rejected:'в›”', limit:'рџ›‘', email:'рџ“§',
+  resume_start:'рџљЂ', resume_done:'вњ…', all_done:'рџЏЃ', captcha:'рџ§©', redirect:'в†ЄпёЏ',
+  error:'вљ пёЏ', info:'В·'
+};
+const IMPORTANT = new Set(['applied','applied_test','applied_captcha','filtered',
+  'blacklisted','rejected','limit','resume_start','resume_done','all_done','error']);
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function cls(kind){ return kind.startsWith('applied') ? 'applied' : kind; }
+
+function evHtml(e){
+  const title = e.title ? esc(e.title) : esc(e.text);
+  const bits = [];
+  if (e.salary) bits.push('<span class="money">' + esc(e.salary) + '</span>');
+  if (e.area) bits.push(esc(e.area));
+  if (e.remote) bits.push('СѓРґР°Р»С‘РЅРЅРѕ');
+  if (e.title) bits.push(esc(e.text.replace(/https?:\/\/\S+/, '').trim()));
+  const link = e.url ? ' В· <a onclick="openUrl(\'' + esc(e.url) + '\')">РѕС‚РєСЂС‹С‚СЊ</a>' : '';
+  return '<div class="ev ' + cls(e.kind) + '">' +
+    '<div class="ic">' + (IC[e.kind] || 'В·') + '</div>' +
+    '<div class="body"><div class="ttl">' + title + '</div>' +
+    (bits.length || link ? '<div class="meta">' + bits.join(' В· ') + link + '</div>' : '') +
+    '</div><div class="t">' + esc(e.t) + '</div></div>';
+}
+
+function rerender(){
+  const only = $('onlyImportant').checked;
+  const list = only ? EV.filter(e => IMPORTANT.has(e.kind)) : EV;
+  $('feed').innerHTML = list.length
+    ? list.map(evHtml).join('')
+    : '<div class="empty">' + (FINISHED ? 'РЎРѕР±С‹С‚РёР№ РЅРµ Р±С‹Р»Рѕ.' : 'Р–РґСѓ РїРµСЂРІС‹С… СЃРѕР±С‹С‚РёР№вЂ¦') + '</div>';
+  scroll();
+}
+function scroll(){
+  if ($('autoscroll').checked){ const m = document.querySelector('main'); m.scrollTop = m.scrollHeight; }
+}
+
+function counters(c){
+  COUNTS = c || {};
+  for (const k of ['applied','filtered','seen_before','rejected','error'])
+    $('c_' + k).textContent = COUNTS[k] || 0;
+}
+
+function tab(name){
+  TAB = name;
+  $('feed').style.display  = name === 'feed'   ? '' : 'none';
+  $('report').style.display= name === 'report' ? '' : 'none';
+  document.querySelectorAll('.tabs button').forEach(b =>
+    b.classList.toggle('on', b.dataset.tab === name));
+}
+
+/* --- СЃРѕР±С‹С‚РёСЏ РёР· Python --- */
+window.onRunEvent = function(e, counts){
+  EV.push(e); counters(counts);
+  const only = $('onlyImportant').checked;
+  if (!only || IMPORTANT.has(e.kind)){
+    const f = $('feed');
+    if (f.querySelector('.empty')) f.innerHTML = '';
+    f.insertAdjacentHTML('beforeend', evHtml(e));
+    scroll();
+  }
+};
+
+window.onRunFinished = function(rep){
+  FINISHED = true; REPORT = rep;
+  counters(rep.counts);
+  const s = $('state');
+  const map = {ok:['ok','РіРѕС‚РѕРІРѕ'], cancelled:['cancel','РѕСЃС‚Р°РЅРѕРІР»РµРЅРѕ'], error:['err','РѕС€РёР±РєР°']};
+  const [c, t] = map[rep.status] || ['ok','РіРѕС‚РѕРІРѕ'];
+  s.className = 'state ' + c; s.textContent = t;
+  $('btnStop').disabled = true;
+  $('btnStop').textContent = 'Р—Р°РІРµСЂС€РµРЅРѕ';
+  $('clock').textContent = fmt(rep.elapsed);
+  renderReport(rep);
+  tab('report');
+};
+
+function fmt(sec){
+  sec = Math.max(0, sec|0);
+  const m = String((sec/60)|0).padStart(2,'0'), s = String(sec%60).padStart(2,'0');
+  return m + ':' + s;
+}
+setInterval(() => { if (!FINISHED) $('clock').textContent = fmt((Date.now()-T0)/1000); }, 1000);
+
+/* --- РѕС‚С‡С‘С‚ --- */
+function renderReport(rep){
+  const c = rep.counts || {};
+  const seg = [
+    ['applied',   c.applied   || 0, 'var(--ok)',   'РѕС‚РєР»РёРєРѕРІ'],
+    ['filtered',  c.filtered  || 0, '#e0a415',     'СЃС‚РѕРї-СЃР»РѕРІР°'],
+    ['seen',      c.seen_before||0, '#9aa2ad',     'СѓР¶Рµ Р±С‹Р»Рё'],
+    ['rejected',  c.rejected  || 0, 'var(--err)',  'РѕС‚РєР°Р· СЃСЂР°Р·Сѓ'],
+  ];
+  const total = seg.reduce((a, s) => a + s[1], 0) || 1;
+
+  let html = '<div class="rep"><h2>Р§С‚Рѕ РїСЂРѕРёР·РѕС€Р»Рѕ Р·Р° ' + fmt(rep.elapsed) + '</h2>';
+  if (rep.limit_reached)
+    html += '<div class="note">Р”РѕСЃС‚РёРіРЅСѓС‚ РґРЅРµРІРЅРѕР№ Р»РёРјРёС‚ РѕС‚РєР»РёРєРѕРІ РЅР° hh.ru. ' +
+            'РћСЃС‚Р°Р»СЊРЅС‹Рµ РІР°РєР°РЅСЃРёРё РѕСЃС‚Р°Р»РёСЃСЊ РЅРµРѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹РјРё вЂ” РїРѕРїСЂРѕР±СѓР№ РїРѕР·Р¶Рµ.</div>';
+  html += '<div class="bar">' + seg.map(s =>
+      s[1] ? '<i style="width:' + (100*s[1]/total) + '%;background:' + s[2] + '"></i>' : ''
+    ).join('') + '</div>';
+  html += '<div class="legend">' + seg.map(s =>
+      '<span><i style="background:' + s[2] + '"></i>' + s[3] + ' вЂ” <b>' + s[1] + '</b></span>'
+    ).join('') + '</div></div>';
+
+  if ((rep.resumes || []).length){
+    html += '<div class="rep"><h2>РџРѕ СЂРµР·СЋРјРµ</h2><table><tr><th>Р РµР·СЋРјРµ</th>' +
+            '<th class="num">РћС‚РєР»РёРєРѕРІ</th></tr>' +
+      rep.resumes.map(r => '<tr><td>' + esc(r.title) + '</td><td class="num">' +
+        (r.applied || 0) + '</td></tr>').join('') + '</table></div>';
+  }
+
+  const sent = (rep.events || []).filter(e => e.kind.startsWith('applied'));
+  if (sent.length){
+    const withPay = sent.filter(e => e.salary);
+    html += '<div class="rep"><h2>РљСѓРґР° РѕС‚РєР»РёРєРЅСѓР»РёСЃСЊ (' + sent.length + ')</h2><table>' +
+      '<tr><th>Р’Р°РєР°РЅСЃРёСЏ</th><th>Р—Р°СЂРїР»Р°С‚Р°</th><th>Р“РѕСЂРѕРґ</th></tr>' +
+      sent.slice(0, 60).map(e => '<tr><td>' +
+        (e.url ? '<a onclick="openUrl(\'' + esc(e.url) + '\')">' + esc(e.title || e.url) + '</a>'
+               : esc(e.title || 'вЂ”')) +
+        '</td><td>' + esc(e.salary || 'вЂ”') + '</td><td>' + esc(e.area || 'вЂ”') + '</td></tr>'
+      ).join('') + '</table>' +
+      (sent.length > 60 ? '<div class="said" style="margin-top:8px">РџРѕРєР°Р·Р°РЅС‹ РїРµСЂРІС‹Рµ 60 РёР· ' +
+        sent.length + '. РџРѕР»РЅС‹Р№ СЃРїРёСЃРѕРє вЂ” РІ С„Р°Р№Р»Рµ РѕС‚С‡С‘С‚Р°.</div>' : '') +
+      (withPay.length ? '' : '') + '</div>';
+  }
+
+  const errs = (rep.events || []).filter(e => e.kind === 'error');
+  if (errs.length){
+    html += '<div class="rep"><h2>РћС€РёР±РєРё (' + errs.length + ')</h2>' +
+      errs.slice(0,20).map(e => '<div class="ev error"><div class="ic">вљ пёЏ</div>' +
+        '<div class="body"><div class="meta">' + esc(e.text) + '</div></div>' +
+        '<div class="t">' + esc(e.t) + '</div></div>').join('') + '</div>';
+  }
+
+  $('report').innerHTML = html;
+  $('said').textContent = 'РћС‚С‡С‘С‚ СЃРѕС…СЂР°РЅС‘РЅ';
+}
+
+/* --- РґРµР№СЃС‚РІРёСЏ --- */
+function stop(){
+  $('btnStop').disabled = true;
+  $('btnStop').textContent = 'РћСЃС‚Р°РЅР°РІР»РёРІР°СЋвЂ¦';
+  $('said').textContent = 'Р”РѕСЃС‹Р»Р°СЋ С‚РµРєСѓС‰РёР№ РѕС‚РєР»РёРє Рё С‚РѕСЂРјРѕР¶Сѓ';
+  window.pywebview.api.cancel_apply();
+}
+function openUrl(u){ window.pywebview.api.open_external(u); }
+function openFolder(){ window.pywebview.api.open_reports_folder(); }
+
+async function boot(){
+  try{ window.pywebview.api.ui_ready('run', ''); }catch(e){}
+  const s = await window.pywebview.api.run_state();
+  EV = s.events || []; counters(s.counts);
+  T0 = Date.now() - (s.elapsed || 0) * 1000;
+  rerender();
+  if (s.status && s.status !== 'running') window.onRunFinished(s);
+}
+window.addEventListener('pywebviewready', boot);
+setTimeout(() => { if (window.pywebview && window.pywebview.api) boot(); }, 400);
+</script>
+</body>
+</html>
