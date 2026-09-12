@@ -46,7 +46,9 @@ hiddenimports = [
     "stopwords",
     "profiles",
     "requests",
-    "core_manager"
+    "core_manager",
+    "telebot",
+    "telegram_bot"
 ]
 
 excludes = [

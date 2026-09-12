@@ -25,6 +25,15 @@ logger = logging.getLogger("hh_agent.engine")
 ENGINE_PACKAGE = "hh_applicant_tool"
 ENGINE_EXPECTED = "1.8.28"
 
+_current_cancel_event = None
+
+def cancel_run() -> bool:
+    """Останавливает текущую операцию движка, если она есть."""
+    if _current_cancel_event:
+        _current_cancel_event.set()
+        return True
+    return False
+
 # Логическое имя операции -> модуль движка.
 MODULES = {
     "apply": "apply_vacancies",
@@ -329,6 +338,8 @@ def run(
         cancel = threading.Event()
         args._cancel_event = cancel
         op._cancel_event = cancel
+        global _current_cancel_event
+        _current_cancel_event = cancel
         with redirect_stdout(_Sink()):
             try:
                 op.run(tool, args)
@@ -339,6 +350,7 @@ def run(
         buf.write(f"\nОшибка: {exc}")
         logger.exception("операция %s", kind)
     finally:
+        _current_cancel_event = None
         pkg_logger.removeHandler(handler)
 
     return (_ANSI.sub("", buf.getvalue()).strip(), code)
