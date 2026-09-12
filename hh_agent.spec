@@ -20,6 +20,23 @@ hiddenimports = [
     "prettytable",
     "PIL",
     "PIL.Image",
+    "smtplib",
+    "email",
+    "email.message",
+    "email.utils",
+    "email.mime.text",
+    "email.mime.multipart",
+    "sqlite3",
+    "html",
+    "logging.handlers",
+    "csv",
+    "ctypes",
+    "runpy",
+    "secrets",
+    "tomllib",
+    "urllib.parse",
+    "ast",
+    "asyncio",
     "app_api",
     "app_main",
     "engine",
@@ -29,13 +46,7 @@ hiddenimports = [
     "stopwords",
     "profiles",
     "requests",
-    "core_manager",
-    "smtplib",
-    "email",
-    "email.mime.text",
-    "email.mime.multipart",
-    "sqlite3",
-    "html"
+    "core_manager"
 ]
 
 excludes = [
