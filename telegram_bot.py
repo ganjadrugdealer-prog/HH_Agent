@@ -64,9 +64,9 @@ def check_whoami(api) -> str:
             return "👤 <b>Статус:</b> Нет данных о профиле."
             
         res = f"👤 <b>Статус:</b>\n\n"
-        res += f"<b>{html_escape(user.get('first_name', ''))} {html_escape(user.get('last_name', ''))}</b>\n"
-        res += f"Email: {html_escape(user.get('email', ''))}\n"
-        res += f"ID: <code>{user.get('id', '')}</code>\n"
+        res += f"<b>{html_escape(user.get('first_name') or '')} {html_escape(user.get('last_name') or '')}</b>\n"
+        res += f"Email: {html_escape(user.get('email') or '')}\n"
+        res += f"ID: <code>{user.get('id') or ''}</code>\n"
         return res
     except Exception as e:
         logger.exception("check_whoami")
@@ -199,7 +199,14 @@ def start_bot_thread(api, tool):
                     res = api.clear_rejections()
                     bot.send_message(chat_id, f"✅ Очистка завершена! {res.get('message', '')}")
                 elif call.data == "stop_all":
+                    stopped = False
                     if engine.cancel_run():
+                        stopped = True
+                    if getattr(api, "_cancel_event", None) is not None:
+                        api.cancel_apply()
+                        stopped = True
+                        
+                    if stopped:
                         bot.send_message(chat_id, "🛑 <b>Процесс останавливается...</b>", parse_mode="HTML")
                     else:
                         bot.send_message(chat_id, "Нет активных процессов для остановки.")

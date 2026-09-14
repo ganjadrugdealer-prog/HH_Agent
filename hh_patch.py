@@ -94,6 +94,7 @@ def apply_patches(memory_path=None) -> None:
         (patch_auth_window, "окно входа"),
         (patch_api_delay, "случайная пауза"),
         (lambda: patch_ping_variety(memory_path), "разнообразие пингов"),
+        (patch_sqlite_types, "безопасные типы sqlite"),
     ):
         try:
             fn()
@@ -102,6 +103,41 @@ def apply_patches(memory_path=None) -> None:
 
     _applied = True
     logger.debug("hh_patch: патчи применены")
+
+
+# ------------------------------------------------------------- sqlite types
+
+def patch_sqlite_types() -> None:
+    """Патч 6 — безопасное сохранение в SQLite.
+    
+    Движок пытается записать словари/списки из HH API в SQLite напрямую
+    (например, поле type у EmployerModel). Это вызывает InterfaceError и 
+    ломает текущую транзакцию, порождая каскад ошибок (OperationalError).
+    Перехватываем to_db и принудительно дампим несовместимые типы.
+    """
+    try:
+        from hh_applicant_tool.storage.models.base import BaseModel
+    except ImportError:
+        return
+
+    if getattr(BaseModel, "_hh_types_patched", False):
+        return
+
+    orig_to_db = BaseModel.to_db
+
+    def patched_to_db(self):
+        data = orig_to_db(self)
+        for k, v in list(data.items()):
+            if isinstance(v, (dict, list)):
+                import json
+                data[k] = json.dumps(v, ensure_ascii=False)
+            elif hasattr(v, "isoformat"):
+                data[k] = v.isoformat()
+        return data
+
+    BaseModel.to_db = patched_to_db
+    BaseModel._hh_types_patched = True
+    logger.debug("hh_patch: безопасные типы SQLite включены")
 
 
 # ------------------------------------------------------- случайная пауза
