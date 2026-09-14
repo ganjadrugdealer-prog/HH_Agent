@@ -18,11 +18,13 @@ build/
 dist/
 *.egg-info/
 *.egg
-*.spec
+# hh_agent.spec — часть репозитория, его игнорировать нельзя.
 
 # Application Data
 data/
 *.log
+crash.log
+selftest.log
 
 # IDEs
 .idea/

@@ -4,12 +4,14 @@ on:
   push:
     tags:
       - 'v*' # Trigger on tags matching v*, e.g. v1.0, v20.15.10
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -23,37 +25,39 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v4
 
+      # Ядро hh-applicant-tool требует Python >= 3.11.
+      # На 3.10 скачанное ядро не импортируется (tomllib и синтаксис 3.11).
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install chromium
+
+      - name: Sanity check (imports, spintax, стоп-слова)
+        run: python tools/ci_check.py
 
       - name: Generate macOS icon (macOS only)
         if: matrix.os == 'macos-latest'
-        run: |
-          sips -s format icns icon.png --out icon.icns || echo "Using fallback icon logic"
+        run: sips -s format icns icon.png --out icon.icns
 
       - name: Build executable
-        run: |
-          python build.py
+        run: python build.py
 
       - name: Package macOS App into DMG (macOS only)
         if: matrix.os == 'macos-latest'
         run: |
           npm install -g create-dmg
-          create-dmg dist/HH-Agent.app dist/ || echo "Failed to create dmg, falling back to zip"
-          if [ -f "dist/HH-Agent.app 1.0.dmg" ]; then
-            mv "dist/HH-Agent.app 1.0.dmg" dist/HH-Agent.dmg
-          elif [ -f "dist/HH-Agent 1.0.dmg" ]; then
-            mv "dist/HH-Agent 1.0.dmg" dist/HH-Agent.dmg
+          create-dmg dist/HH-Agent.app dist/ || true
+          dmg=$(ls dist/*.dmg 2>/dev/null | head -n1 || true)
+          if [ -n "$dmg" ]; then
+            mv "$dmg" dist/HH-Agent.dmg
           else
-            cd dist && zip -r HH-Agent.dmg HH-Agent.app
+            echo "::error::create-dmg не собрал образ"
+            exit 1
           fi
 
       - name: Upload Build Artifacts
@@ -61,6 +65,7 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release

@@ -104,33 +104,45 @@
     `;
     document.head.appendChild(style);
 
-    // 2. Initialize Theme synchronously to avoid flicker
-    const savedTheme = localStorage.getItem('hh_agent_theme');
-    if (savedTheme === 'dark') {
-        document.body.classList.add('dark-theme');
+    // localStorage в webview на file:// может быть недоступен — не роняем страницу.
+    function readTheme() {
+        try { return localStorage.getItem('hh_agent_theme'); } catch (e) { return null; }
     }
+    function writeTheme(value) {
+        try { localStorage.setItem('hh_agent_theme', value); } catch (e) { /* ignore */ }
+    }
+
+    let isDark = readTheme() === 'dark';
+
+    // 2. Initialize Theme synchronously to avoid flicker.
+    // document.body может ещё не существовать, если скрипт подключили в <head>.
+    function applyTheme() {
+        if (!document.body) return;
+        document.body.classList.toggle('dark-theme', isDark);
+    }
+    applyTheme();
 
     // 3. Create Toggle Button
     const btn = document.createElement('button');
     btn.id = 'theme-toggle-btn';
-    
+
     function updateBtn() {
-        const isDark = document.body.classList.contains('dark-theme');
         btn.innerHTML = isDark ? '<span>🌙</span> Тьма' : '<span>☀️</span> Свет';
     }
     updateBtn();
 
     btn.addEventListener('click', () => {
-        document.body.classList.toggle('dark-theme');
-        const isDark = document.body.classList.contains('dark-theme');
-        localStorage.setItem('hh_agent_theme', isDark ? 'dark' : 'light');
+        isDark = !isDark;
+        applyTheme();
+        writeTheme(isDark ? 'dark' : 'light');
         updateBtn();
     });
 
     // 4. Inject Button when DOM is ready
     function injectBtn() {
+        applyTheme();
         if (document.getElementById('theme-toggle-btn')) return;
-        
+
         const appHeader = document.querySelector('header.top .prof');
         const runHeader = document.querySelector('header .top');
         

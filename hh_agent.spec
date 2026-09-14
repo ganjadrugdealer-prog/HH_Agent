@@ -1,55 +1,106 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for HH Agent Launcher."""
-import os
 import sys
-from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 datas = []
 datas += collect_data_files("playwright")
 
+binaries = []
+binaries += collect_dynamic_libs("playwright")
+
 # UI templates
 datas += [("ui/app.html", "ui"), ("ui/wizard.html", "ui"), ("ui/run.html", "ui"), ("ui/loader.html", "ui"), ("ui/theme.js", "ui")]
 
-hiddenimports = [
-    "snowballstemmer",
-    "webview",
-    "webview.platforms.edgechromium",
-    "clr_loader",
-    "bottle",
-    "prettytable",
+# Ядро hh_applicant_tool в сборку НЕ входит: оно скачивается при первом
+# запуске. PyInstaller его импорты не видит, поэтому всё, что ядру нужно,
+# перечислено здесь вручную. Список сверен с реальными import'ами ядра 1.8.28.
+core_runtime = [
     "PIL",
     "PIL.Image",
-    "smtplib",
-    "email",
-    "email.message",
-    "email.utils",
-    "email.mime.text",
-    "email.mime.multipart",
-    "sqlite3",
-    "html",
-    "logging.handlers",
-    "csv",
-    "ctypes",
-    "runpy",
-    "secrets",
-    "tomllib",
-    "urllib.parse",
+    "argparse",
     "ast",
     "asyncio",
+    "base64",
+    "bottle",
+    "collections",
+    "contextlib",
+    "csv",
+    "ctypes",
+    "dataclasses",
+    "datetime",
+    "email",
+    "email.message",
+    "email.mime.multipart",
+    "email.mime.text",
+    "email.utils",
+    "enum",
+    "functools",
+    "gzip",
+    "hashlib",
+    "html",
+    "http",
+    "http.client",
+    "http.cookiejar",
+    "importlib",
+    "importlib.metadata",
+    "itertools",
+    "json",
+    "logging.handlers",
+    "pkgutil",
+    "platform",
+    "playwright",
+    "playwright.__main__",
+    "playwright.async_api",
+    "playwright.sync_api",
+    "playwright._impl._driver",
+    "pprint",
+    "prettytable",
+    "requests",
+    "runpy",
+    "secrets",
+    "signal",
+    "smtplib",
+    "snowballstemmer",
+    "sqlite3",
+    "struct",
+    "subprocess",
+    "tomllib",
+    "urllib.parse",
+    "urllib3",
+    "uuid",
+    "webview",
+    "zlib",
+]
+
+# Наши собственные модули — они импортируются по имени из ядра/патчей.
+app_modules = [
     "app_api",
     "app_main",
+    "core_manager",
     "engine",
-    "letters",
     "hh_patch",
+    "letters",
+    "profiles",
     "run_monitor",
     "stopwords",
-    "profiles",
-    "requests",
-    "core_manager",
     "telebot",
-    "telegram_bot"
+    "telegram_bot",
 ]
+
+hiddenimports = core_runtime + app_modules
+
+if sys.platform == "win32":
+    hiddenimports += [
+        "clr_loader",
+        "pythonnet",
+        "webview.platforms.edgechromium",
+        "webview.platforms.winforms",
+    ]
+elif sys.platform == "darwin":
+    hiddenimports += ["webview.platforms.cocoa"]
+else:
+    hiddenimports += ["webview.platforms.gtk", "webview.platforms.qt"]
 
 excludes = [
     "tkinter", 
@@ -61,7 +112,7 @@ excludes = [
 a = Analysis(
     ["app_main.py"],
     pathex=["."],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -87,7 +138,7 @@ exe = EXE(
     upx=False,
     runtime_tmpdir=None,
     console=False,
-    icon='icon.ico',
+    icon='icon.ico' if sys.platform == 'win32' else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

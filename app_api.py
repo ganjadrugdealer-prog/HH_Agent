@@ -83,37 +83,65 @@ class AppApi(Api):
         self._data_root = Path(data_root) if data_root else None
         self._restart = restart
         self.monitor = RunMonitor(tool, self._res_dir)
-        
-        threading.Thread(target=self._check_core_update, daemon=True).start()
 
-    def _check_core_update(self):
-        import core_manager
-        approved = core_manager.get_approved_version()
-        installed = core_manager.get_installed_version()
-        if approved and installed and approved != installed:
-            import time
-            time.sleep(2)  # Даем UI загрузиться
-            if self.window:
-                # Показываем системный JS confirm. Если да - запускаем апдейт.
-                code = f"""
-                if (confirm('Доступна новая версия ядра ({approved}). Установлена ({installed}). Обновить сейчас?')) {{
-                    pywebview.api.trigger_core_update();
-                }}
-                """
-                self.window.evaluate_js(code)
+    def set_window(self, window) -> None:
+        """Окно появилось: готовим шаблоны профиля и проверяем версию ядра.
 
-    def trigger_core_update(self):
-        import core_manager
-        import shutil
-        shutil.rmtree(core_manager.get_core_path(), ignore_errors=True)
-        if self._restart:
-            self._restart()
-        return True
+        Раньше этот метод был потерян (его тело осталось недостижимым куском
+        в trigger_core_update), из-за чего ping.txt никогда не создавался.
+        """
+        super().set_window(window)
         try:
             letters.set_memory_path(self.profile_dir() / "ping_memory.json")
             self.ensure_templates()
         except Exception:
             logger.exception("подготовка шаблонов")
+        threading.Thread(target=self._check_core_update, daemon=True).start()
+
+    def _check_core_update(self):
+        """Спрашиваем про обновление ядра, если одобренная версия новее."""
+        try:
+            import core_manager
+
+            approved = core_manager.get_approved_version()
+            installed = core_manager.get_installed_version()
+            if not (approved and installed) or approved == installed:
+                return
+            import time
+
+            time.sleep(2)  # даём интерфейсу отрисоваться
+            if not self._window:
+                return
+            question = json.dumps(
+                f"Доступна новая версия ядра ({approved}). "
+                f"Установлена ({installed}). Обновить сейчас?",
+                ensure_ascii=False,
+            )
+            self._window.evaluate_js(
+                f"if (confirm({question})) {{ pywebview.api.trigger_core_update(); }}"
+            )
+        except Exception:
+            logger.exception("проверка версии ядра")
+
+    def trigger_core_update(self):
+        """Помечаем ядро к переустановке и перезапускаемся.
+
+        Папку ядра не удаляем прямо здесь: её модули уже загружены, а
+        rmtree(ignore_errors=True) при любой помехе молча оставляет часть
+        файлов — и тогда is_core_installed() вернёт True, загрузчик не
+        откроется, а ядро останется битым. Метку видит следующий запуск
+        ещё до импорта ядра, и переустановка идёт с чистого листа.
+        """
+        try:
+            import core_manager
+
+            core_manager.request_reinstall()
+        except Exception as exc:
+            logger.exception("trigger_core_update")
+            return {"status": "error", "message": str(exc)}
+        if self._restart:
+            self._restart_later(0.3)
+        return {"status": "ok"}
 
     # ------------------------------------------------------- лента и отчёт
 
@@ -131,6 +159,10 @@ class AppApi(Api):
 
     def apply_vacancies(self, params: dict[str, Any]) -> dict[str, Any]:
         params = dict(params or {})
+
+        if engine.is_running():
+            return {"status": "error",
+                    "message": "Сейчас выполняется другая операция движка."}
 
         # Без сопроводительного письма рассылку не запускаем: иначе движок
         # подставит свою заглушку из apply_vacancies.py, и работодатели
@@ -274,16 +306,6 @@ class AppApi(Api):
 
     def load_report(self, file: str) -> dict[str, Any] | None:
         return self.monitor.load_report(file)
-
-    def open_reports_folder(self) -> dict[str, str]:
-        try:
-            import subprocess
-
-            path = self.monitor.reports_dir()
-            subprocess.Popen(["explorer", str(path)])
-            return {"status": "ok"}
-        except Exception as exc:
-            return {"status": "error", "message": str(exc)}
 
     # ------------------------------------------------------------------ utils
 
@@ -690,7 +712,7 @@ class AppApi(Api):
             self._open_folder(path)
             return {"status": "ok"}
         except Exception as exc:
-            return {"status": "error", "error": str(exc)}
+            return {"status": "error", "message": str(exc)}
 
     def open_data_folder(self) -> dict[str, str]:
         try:
@@ -703,7 +725,14 @@ class AppApi(Api):
 
     def _capture_run(self, kind: str, options: dict[str, Any] | None = None
                      ) -> tuple[str, int]:
-        """Запуск операции движка. Всё знание о флагах живёт в engine.py."""
+        """Запуск операции движка. Всё знание о флагах живёт в engine.py.
+
+        База данных и перехват вывода общие на процесс, поэтому параллельно
+        с рассылкой быстрые действия не запускаем — иначе события одной
+        операции попадут в ленту другой.
+        """
+        if self._is_running:
+            return ("Сейчас идёт рассылка откликов — дождитесь её окончания.", 1)
         return engine.run(self._tool, kind, options or {},
                           on_line=self._action_line)
 

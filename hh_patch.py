@@ -26,6 +26,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import random
 import re
@@ -64,12 +65,38 @@ def apply_patches(memory_path=None) -> None:
     if _applied:
         return
 
+    for fn, name in (
+        (patch_excluded_by_name, "стоп-слова по названию"),
+        (patch_dry_run_blacklist, "чёрный список в dry-run"),
+        (patch_auth_window, "окно входа"),
+        (patch_api_delay, "случайная пауза"),
+        (lambda: patch_ping_variety(memory_path), "разнообразие пингов"),
+        (patch_sqlite_types, "безопасные типы sqlite"),
+    ):
+        try:
+            fn()
+        except Exception:
+            # Раньше было debug — сломанный патч уходил в тишину.
+            logger.warning("не применился патч: %s", name, exc_info=True)
+
+    _applied = True
+    logger.debug("hh_patch: патчи применены")
+
+
+def patch_excluded_by_name() -> None:
+    """Патч 1 — стоп-слова только по названию вакансии."""
     from hh_applicant_tool.operations import apply_vacancies as av
 
-    # --- патч 1
     av.Operation._is_excluded = _is_excluded_by_name
 
-    # --- патч 2: blacklist не трогаем в холостом прогоне
+
+def patch_dry_run_blacklist() -> None:
+    """Патч 2 — в холостом прогоне не трогаем чёрный список на hh.ru."""
+    from hh_applicant_tool.operations import apply_vacancies as av
+
+    if getattr(av.Operation, "_hh_dry_patched", False):
+        return
+
     original_run = av.Operation.run
 
     def run_with_dry_guard(self, tool, args):
@@ -89,20 +116,7 @@ def apply_patches(memory_path=None) -> None:
         return original_run(self, tool, args)
 
     av.Operation.run = run_with_dry_guard
-
-    for fn, name in (
-        (patch_auth_window, "окно входа"),
-        (patch_api_delay, "случайная пауза"),
-        (lambda: patch_ping_variety(memory_path), "разнообразие пингов"),
-        (patch_sqlite_types, "безопасные типы sqlite"),
-    ):
-        try:
-            fn()
-        except Exception:
-            logger.debug("не применился патч: %s", name, exc_info=True)
-
-    _applied = True
-    logger.debug("hh_patch: патчи применены")
+    av.Operation._hh_dry_patched = True
 
 
 # ------------------------------------------------------------- sqlite types
@@ -128,9 +142,11 @@ def patch_sqlite_types() -> None:
     def patched_to_db(self):
         data = orig_to_db(self)
         for k, v in list(data.items()):
-            if isinstance(v, (dict, list)):
-                import json
-                data[k] = json.dumps(v, ensure_ascii=False)
+            if isinstance(v, (dict, list, tuple, set)):
+                data[k] = json.dumps(
+                    list(v) if isinstance(v, (tuple, set)) else v,
+                    ensure_ascii=False,
+                )
             elif hasattr(v, "isoformat"):
                 data[k] = v.isoformat()
         return data

@@ -28,7 +28,9 @@ IMPORT_FILES = ("config.json", "cookies.txt", "data", "log.txt")
 
 
 def slugify(name: str) -> str:
-    text = unicodedata.normalize("NFKD", name or "").strip().lower()
+    # NFKC, а не NFKD: разложение отрывает от «ё» и «й» диакритику,
+    # и она превращалась в лишний дефис («Ёлка» -> «e-lka»).
+    text = unicodedata.normalize("NFKC", name or "").strip().lower()
     translit = {
         "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
         "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",

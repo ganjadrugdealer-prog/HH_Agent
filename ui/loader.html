@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -38,40 +38,45 @@
         }
         h2 { margin-top: 0; font-size: 1.2rem; }
         p { color: #666; font-size: 0.9rem; }
-        #status-text { font-weight: bold; margin-top: 20px; color: #007bff;}
+        #status-text { font-weight: bold; margin-top: 20px; color: #007bff; word-break: break-word; }
+        #status-text.error { color: #b42318; }
+        #retry { display: none; margin-top: 18px; padding: 8px 18px; border-radius: 8px;
+            border: 1px solid #c9ced6; background: #fff; cursor: pointer; font-size: 14px; }
     </style>
-<script src="theme.js"></script>
 </head>
 <body>
     <div class="loader-container">
-        <div class="spinner"></div>
-        <h2>РџРµСЂРІС‹Р№ Р·Р°РїСѓСЃРє</h2>
-        <p>РќР°СЃС‚СЂРѕР№РєР° РѕРєСЂСѓР¶РµРЅРёСЏ Рё Р·Р°РіСЂСѓР·РєР° СЏРґСЂР°.<br>РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РїРѕРґРѕР¶РґРёС‚Рµ...</p>
-        <div id="status-text">РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ...</div>
+        <div class="spinner" id="spinner"></div>
+        <h2>Первый запуск</h2>
+        <p>Настройка окружения и загрузка ядра.<br>Пожалуйста, подождите...</p>
+        <div id="status-text">Инициализация...</div>
+        <button id="retry" onclick="startInstall()">Повторить</button>
     </div>
 
     <script>
-        window.addEventListener('pywebviewready', function() {
-            // Trigger core download process
-            pywebview.api.install_core().then(function(response) {
-                if(response.status === 'error') {
-                    document.getElementById('status-text').innerText = "РћС€РёР±РєР°: " + response.error;
-                    document.getElementById('status-text').style.color = "red";
-                    document.querySelector('.spinner').style.display = 'none';
-                } else {
-                    document.getElementById('status-text').innerText = "Р“РѕС‚РѕРІРѕ! Р—Р°РїСѓСЃРє РёРЅС‚РµСЂС„РµР№СЃР°...";
-                }
-            }).catch(function(err) {
-                document.getElementById('status-text').innerText = "РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР°: " + err;
-                document.getElementById('status-text').style.color = "red";
-                document.querySelector('.spinner').style.display = 'none';
-            });
-        });
-
-        // Function called from Python to update progress
-        function update_progress(msg) {
-            document.getElementById('status-text').innerText = msg;
+        function setStatus(text, isError) {
+            var el = document.getElementById('status-text');
+            el.innerText = text;
+            el.className = isError ? 'error' : '';
+            document.getElementById('spinner').style.display = isError ? 'none' : '';
+            document.getElementById('retry').style.display = isError ? 'inline-block' : 'none';
         }
+
+        // Вызывается из Python по ходу установки.
+        window.update_progress = function (msg) { setStatus(msg, false); };
+        window.install_failed = function (msg) {
+            setStatus('Ошибка: ' + msg + '\nПроверьте интернет и нажмите «Повторить».', true);
+        };
+
+        function startInstall() {
+            setStatus('Инициализация...', false);
+            window.pywebview.api.install_core().catch(function (err) {
+                window.install_failed(err);
+            });
+        }
+
+        window.addEventListener('pywebviewready', startInstall);
     </script>
+    <script src="theme.js"></script>
 </body>
 </html>

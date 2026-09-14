@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "HH Agent"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 
 def _pin_browsers_path() -> None:
@@ -272,7 +272,7 @@ def selftest() -> int:
         say("templates   : FAIL", exc)
 
     pages = {}
-    for name in ("app.html", "wizard.html", "run.html"):
+    for name in ("app.html", "wizard.html", "run.html", "loader.html", "theme.js"):
         pages[name] = (resource_dir() / name).exists()
     try:
         import profiles
@@ -398,12 +398,35 @@ def selftest() -> int:
 
     try:
         import webview  # noqa: F401
-        import webview.platforms.edgechromium  # noqa: F401
 
-        say("webview     : ok (edgechromium)")
+        if os.name == "nt":
+            import webview.platforms.edgechromium  # noqa: F401
+
+            say("webview     : ok (edgechromium)")
+        else:
+            say("webview     : ok")
     except Exception as exc:
         ok = False
         say("webview     : FAIL", exc)
+
+    try:
+        import telebot  # noqa: F401
+        import telegram_bot  # noqa: F401
+
+        assert callable(telegram_bot.start_bot_thread)
+        say("telegram    : ok")
+    except Exception as exc:
+        ok = False
+        say("telegram    : FAIL", exc)
+
+    try:
+        import core_manager
+
+        say("core        :", core_manager.get_installed_version() or "не установлено",
+            "|", core_manager.get_core_path())
+    except Exception as exc:
+        ok = False
+        say("core        : FAIL", exc)
 
     say("RESULT      :", "OK" if ok else "FAILED")
     try:
@@ -417,69 +440,91 @@ def selftest() -> int:
 
 
 class LoaderApi:
+    """API экрана первого запуска: скачивание ядра."""
+
     def __init__(self):
-        self.window = None
+        self._window = None
+        self._running = False
 
     def set_window(self, window):
-        self.window = window
+        self._window = window
+
+    # совместимость со старым именем
+    @property
+    def window(self):
+        return self._window
+
+    def _js(self, fn: str, *args) -> None:
+        """Зовём JS с безопасно экранированными аргументами."""
+        if not self._window:
+            return
+        import json
+
+        try:
+            payload = ", ".join(json.dumps(a, ensure_ascii=False) for a in args)
+            self._window.evaluate_js(f"if(window.{fn})window.{fn}({payload})")
+        except Exception:
+            pass
 
     def install_core(self):
-        import core_manager
         import threading
-        
+
+        if self._running:
+            return {"status": "started"}
+        self._running = True
+
         def _task():
+            import core_manager
+            import time
+
             try:
-                def progress_cb(msg):
-                    if self.window:
-                        self.window.evaluate_js(f'update_progress("{msg}")')
-                
-                core_manager.install_core(progress_cb)
-                
-                if self.window:
-                    self.window.evaluate_js('update_progress("Готово! Перезапуск...")')
-                import time
+                core_manager.install_core(lambda msg: self._js("update_progress", msg))
+                self._js("update_progress", "Готово! Перезапуск...")
                 time.sleep(1)
-                
-                # Restart the app
                 restart_app()
-            except Exception as e:
+            except Exception as exc:
                 import traceback
+
                 traceback.print_exc()
-                if self.window:
-                    err_safe = str(e).replace('"', '\\"')
-                    self.window.evaluate_js(f'document.getElementById("status-text").innerText = "Ошибка: {err_safe}";')
-                    self.window.evaluate_js("document.getElementById('status-text').style.color = 'red';")
-                    self.window.evaluate_js("document.querySelector('.spinner').style.display = 'none';")
-        
+                self._js("install_failed", f"{exc}")
+            finally:
+                self._running = False
+
         threading.Thread(target=_task, daemon=True).start()
-        return {'status': 'started'}
+        return {"status": "started"}
+
 
 def main() -> int:
     argv = sys.argv[1:]
-    
+
     import core_manager
+
+    # Служебные режимы обязаны работать и без установленного ядра:
+    # именно селф-тест объясняет, почему ядро не встало.
+    if "--install-browser" in argv:
+        return install_browser_mode()
+    if "--selftest" in argv:
+        core_manager.init_core()
+        return selftest()
+
     if not core_manager.is_core_installed():
         import webview
+
         api = LoaderApi()
         loader_url = (resource_dir() / "loader.html").as_uri()
         window = webview.create_window(
             title=f"{APP_NAME} Launcher",
             url=loader_url,
             js_api=api,
-            width=500,
-            height=400,
-            resizable=False
+            width=520,
+            height=420,
+            resizable=False,
         )
         api.set_window(window)
         webview.start()
         return 0
-        
+
     core_manager.init_core()
-    
-    if "--selftest" in argv:
-        return selftest()
-    if "--install-browser" in argv:
-        return install_browser_mode()
 
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     data_dir = active_profile_dir()

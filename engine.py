@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import io
 import logging
 import re
@@ -25,14 +26,28 @@ logger = logging.getLogger("hh_agent.engine")
 ENGINE_PACKAGE = "hh_applicant_tool"
 ENGINE_EXPECTED = "1.8.28"
 
-_current_cancel_event = None
+# Операции движка перехватывают stdout процесса целиком, поэтому две сразу
+# запускать нельзя: вывод одной уйдёт в ленту другой. Лента приложения и
+# Telegram-бот ходят сюда из разных потоков — сериализуем.
+_run_lock = threading.RLock()
+
+# Все живые события отмены: cancel_run() гасит всё, что сейчас выполняется.
+_cancel_events: set[threading.Event] = set()
+_cancel_lock = threading.Lock()
+
 
 def cancel_run() -> bool:
-    """Останавливает текущую операцию движка, если она есть."""
-    if _current_cancel_event:
-        _current_cancel_event.set()
-        return True
-    return False
+    """Останавливает текущие операции движка, если они есть."""
+    with _cancel_lock:
+        events = list(_cancel_events)
+    for event in events:
+        event.set()
+    return bool(events)
+
+
+def is_running() -> bool:
+    with _cancel_lock:
+        return bool(_cancel_events)
 
 # Логическое имя операции -> модуль движка.
 MODULES = {
@@ -322,35 +337,55 @@ def run(
 
     handler = _Handler(logging.INFO)
     pkg_logger = logging.getLogger(ENGINE_PACKAGE)
-    pkg_logger.addHandler(handler)
 
     code = 0
-    try:
-        mod = import_module(f"{ENGINE_PACKAGE}.operations.{module_name}")
-        op = mod.Operation()
-        parser = argparse.ArgumentParser(add_help=False)
-        op.setup_parser(parser)
-        ns_cls = getattr(mod, "Namespace", argparse.Namespace)
+    cancel: threading.Event | None = None
+    with _run_lock:
+        pkg_logger.addHandler(handler)
         try:
-            args = parser.parse_args(argv, namespace=ns_cls())
-        except SystemExit:
-            return ("Движок не принял параметры: " + " ".join(argv), 2)
-        cancel = threading.Event()
-        args._cancel_event = cancel
-        op._cancel_event = cancel
-        global _current_cancel_event
-        _current_cancel_event = cancel
-        with redirect_stdout(_Sink()):
+            mod = import_module(f"{ENGINE_PACKAGE}.operations.{module_name}")
+            op = mod.Operation()
+            parser = argparse.ArgumentParser(add_help=False)
+            op.setup_parser(parser)
+            ns_cls = getattr(mod, "Namespace", argparse.Namespace)
             try:
-                op.run(tool, args)
-            except TypeError:
-                op.run(tool)
-    except Exception as exc:
-        code = 1
-        buf.write(f"\nОшибка: {exc}")
-        logger.exception("операция %s", kind)
-    finally:
-        _current_cancel_event = None
-        pkg_logger.removeHandler(handler)
+                args = parser.parse_args(argv, namespace=ns_cls())
+            except SystemExit:
+                return ("Движок не принял параметры: " + " ".join(argv), 2)
+            cancel = threading.Event()
+            args._cancel_event = cancel
+            op._cancel_event = cancel
+            with _cancel_lock:
+                _cancel_events.add(cancel)
+            with redirect_stdout(_Sink()):
+                # Арность run() определяем заранее. Ловить TypeError здесь
+                # нельзя: ошибка из середины операции приводила к повторному
+                # запуску, то есть к повторной рассылке откликов.
+                if _run_takes_args(op.run):
+                    op.run(tool, args)
+                else:
+                    op.run(tool)
+        except Exception as exc:
+            code = 1
+            buf.write(f"\nОшибка: {exc}")
+            logger.exception("операция %s", kind)
+        finally:
+            if cancel is not None:
+                with _cancel_lock:
+                    _cancel_events.discard(cancel)
+            pkg_logger.removeHandler(handler)
 
     return (_ANSI.sub("", buf.getvalue()).strip(), code)
+
+
+def _run_takes_args(run: Callable[..., Any]) -> bool:
+    """Принимает ли Operation.run второй позиционный аргумент (args)."""
+    try:
+        params = list(inspect.signature(run).parameters.values())
+    except (TypeError, ValueError):
+        return True
+    if any(p.kind is p.VAR_POSITIONAL for p in params):
+        return True
+    positional = [p for p in params
+                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    return len(positional) >= 2
