@@ -6,6 +6,11 @@ on:
       - 'v*' # Trigger on tags matching v*, e.g. v1.0, v20.15.10
   workflow_dispatch:
 
+env:
+  # windows-раннер держит консоль в cp1252, а логи у нас русские
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -97,5 +102,7 @@ jobs:
           files: |
             dist_win/HH-Agent.exe
             dist_mac/HH-Agent.dmg
+          # иначе релиз опубликуется пустым, если файла нет
+          fail_on_unmatched_files: true
           draft: false
           prerelease: false

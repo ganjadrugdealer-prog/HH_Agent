@@ -13,6 +13,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+def _force_utf8_output() -> None:
+    """Вывод не должен зависеть от кодировки консоли.
+
+    На windows-раннере GitHub Actions stdout приходит в cp1252, и первый же
+    print с кириллицей роняет скрипт UnicodeEncodeError. Прибиваем UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_force_utf8_output()
+
 
 def approved_version() -> str | None:
     try:

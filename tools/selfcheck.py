@@ -25,13 +25,51 @@ BUILD = Path(sys.argv[1] if len(sys.argv) > 1 else
              Path(__file__).resolve().parent.parent).resolve()
 sys.path.insert(0, str(BUILD))
 
+def _force_utf8_output() -> None:
+    """Вывод не должен зависеть от кодировки консоли.
+
+    На windows-раннере GitHub Actions stdout приходит в cp1252, и первый же
+    print с кириллицей роняет скрипт UnicodeEncodeError. Прибиваем UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_force_utf8_output()
+
+
 RESULTS = []
+
+
+class Skipped(Exception):
+    """Проверку выполнить нечем — не наша вина, сборку не валим."""
+
+
+def skip_on_network(fn):
+    """Сетевые проверки не должны ронять релиз из-за недоступности PyPI."""
+    import functools
+    import socket
+    import urllib.error
+
+    @functools.wraps(fn)
+    def wrapper():
+        try:
+            return fn()
+        except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
+            raise Skipped(f"сеть недоступна: {exc}") from exc
+
+    return wrapper
 
 
 def check(name, fn):
     try:
         fn()
         RESULTS.append(("PASS", name, ""))
+    except Skipped as exc:
+        RESULTS.append(("SKIP", name, str(exc)))
     except AssertionError as exc:
         RESULTS.append(("FAIL", name, str(exc) or "assert"))
     except Exception as exc:
@@ -371,6 +409,7 @@ def t_core_manager_paths():
     assert p.name == "core" and p.parent.name == "HH_Agent", p
 
 
+@skip_on_network
 def t_core_manager_install(tmpenv=True):
     """Реальная установка ядра с PyPI во временную папку (нужна сеть)."""
     import importlib
@@ -991,16 +1030,21 @@ def main():
 
     width = max(len(n) for _, n, _ in RESULTS) + 2
     bad = 0
+    skipped = 0
     for status, name, detail in RESULTS:
         print(f"{status:5} {name:<{width}}", end="")
-        if status != "PASS":
+        if status == "SKIP":
+            skipped += 1
+            print(detail.splitlines()[0] if detail else "")
+        elif status != "PASS":
             bad += 1
             print(detail.splitlines()[0] if detail else "")
             for line in detail.splitlines()[1:6]:
                 print("        " + line)
         else:
             print()
-    print(f"\n{len(RESULTS) - bad}/{len(RESULTS)} passed")
+    tail = f" ({skipped} пропущено)" if skipped else ""
+    print(f"\n{len(RESULTS) - bad - skipped}/{len(RESULTS)} passed{tail}")
     return 1 if bad else 0
 
 
