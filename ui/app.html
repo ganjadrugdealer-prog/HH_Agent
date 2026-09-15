@@ -180,6 +180,33 @@
 
   .more{border:0;background:transparent;color:var(--accent);font-weight:600;
     font-size:13px;cursor:pointer;padding:4px 0}
+  /* ===== списки аккаунтов и резюме ===== */
+  .list{display:flex;flex-direction:column}
+  .li{display:flex;align-items:center;gap:12px;padding:12px 0;
+    border-bottom:1px solid var(--line2)}
+  .li:last-child{border-bottom:0}
+  .li .pick{width:16px;height:16px;accent-color:var(--accent);flex:none;margin:0;cursor:pointer}
+  .li .main{flex:1;min-width:0;cursor:pointer}
+  .li .ttl{font-weight:650;font-size:14px;display:flex;align-items:center;
+    gap:8px;flex-wrap:wrap}
+  .li .sub{font-size:12px;color:var(--dim);margin-top:3px;word-break:break-all}
+  .li .acts2{display:flex;gap:8px;flex:none}
+  .tag2{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:var(--soft);color:var(--dim);white-space:nowrap}
+  .tag2.on{background:var(--b1);color:var(--accent)}
+  .tag2.ok{background:var(--okbg);color:var(--ok)}
+  .tag2.off{background:var(--errbg);color:var(--err)}
+
+  /* ===== модальное окно ===== */
+  .modal{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;
+    align-items:center;justify-content:center;z-index:999;padding:20px}
+  .modal .box{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px;max-width:460px;width:100%;
+    box-shadow:0 14px 44px rgba(16,24,40,.28)}
+  .modal h4{margin:0 0 10px;font-size:15.5px;font-weight:700;letter-spacing:-.01em}
+  .modal .txt{font-size:13.5px;color:var(--dim);white-space:pre-line;line-height:1.5}
+  .modal .row{margin-top:18px;flex-wrap:wrap;justify-content:flex-end}
+
   .sp-loader{display:inline-block;width:12px;height:12px;border:2px solid #cbd5e1;
     border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
     vertical-align:-1px;margin-right:7px}
@@ -193,6 +220,7 @@
     <div class="nav" id="nav">
       <button data-s="home" class="on"><span class="ic">🏠</span>Главная</button>
       <button data-s="letter"><span class="ic">✍️</span>Сопроводительное<span class="badge hide" id="navBadge">!</span></button>
+      <button data-s="resumes"><span class="ic">📄</span>Резюме</button>
       <button data-s="search"><span class="ic">🎛</span>Настройки поиска</button>
       <button data-s="replies"><span class="ic">💬</span>Отклики</button>
       <button data-s="settings"><span class="ic">⚙️</span>Настройки</button>
@@ -310,6 +338,23 @@
         </div>
       </section>
 
+      <!-- ============================ РЕЗЮМЕ -->
+      <section class="screen" id="s-resumes">
+        <div class="card">
+          <h3>Резюме на hh.ru <span class="r" id="resCount"></span></h3>
+          <div class="muted" style="margin-bottom:12px">С каким резюме рассылать отклики.
+Ядро умеет брать за прогон только одно резюме, поэтому выбор одиночный.
+«Все резюме» — прежнее поведение: ядро пройдёт по ним по очереди.</div>
+          <div class="row wrap" style="margin-bottom:4px">
+            <button class="btn sm" id="resReload">Обновить список</button>
+            <div class="sp"></div>
+            <button class="btn sm" id="resBump">Поднять в поиске</button>
+          </div>
+          <div class="note hide" id="resNote"></div>
+          <div class="list" id="resList"></div>
+        </div>
+      </section>
+
       <!-- ============================ НАСТРОЙКИ ПОИСКА -->
       <section class="screen" id="s-search">
         <div class="card">
@@ -400,12 +445,12 @@
       <!-- ============================ НАСТРОЙКИ -->
       <section class="screen" id="s-settings">
         <div class="card">
-          <h3>Профили</h3>
-          <div class="muted" style="margin-bottom:10px">Каждый профиль — отдельный аккаунт hh.ru
-            со своим письмом, базой и отчётами.</div>
-          <div class="row wrap">
-            <select id="setProf" class="t" style="max-width:280px"></select>
-            <button class="btn sm" id="setProfAdd">+ Новый</button>
+          <h3>Аккаунты <span class="r" id="profCount"></span></h3>
+          <div class="muted" style="margin-bottom:10px">Каждый аккаунт — отдельный профиль hh.ru
+            со своим входом, письмом, базой и отчётами.</div>
+          <div class="list" id="profList"></div>
+          <div class="row wrap" style="margin-top:12px">
+            <button class="btn sm" id="setProfAdd">+ Новый аккаунт</button>
             <button class="btn sm" id="setProfImport">Импорт из папки бота</button>
           </div>
           <div class="note hide" id="profNote"></div>
@@ -453,12 +498,20 @@
     </main>
   </div>
 </div>
+
+<div class="modal hide" id="modal">
+  <div class="box">
+    <h4 id="mTitle"></h4>
+    <div class="txt" id="mText"></div>
+    <div class="row" id="mBtns"></div>
+  </div>
+</div>
 <script>
 (function () {
   var api = function () { return window.pywebview && window.pywebview.api; };
   var $ = function (id) { return document.getElementById(id); };
-  var TITLES = {home:'Главная', letter:'Шаблоны сообщений', search:'Настройки поиска',
-                replies:'Отклики', settings:'Настройки'};
+  var TITLES = {home:'Главная', letter:'Шаблоны сообщений', resumes:'Резюме',
+                search:'Настройки поиска', replies:'Отклики', settings:'Настройки'};
   var state = {};
   var areasLoaded = false;
   var running = false;
@@ -473,6 +526,30 @@
     el.innerHTML='<b>'+(kind==='err'?'✕':kind==='warn'?'!':kind==='ok'?'✓':'i')+'</b><span></span>';
     el.lastChild.textContent=text;
   }
+
+  /* маленькое модальное окно вместо цепочки confirm() */
+  function modal(title, text, buttons){
+    $('mTitle').textContent = title;
+    $('mText').textContent = text;
+    var box = $('mBtns'); box.innerHTML = '';
+    (buttons||[]).forEach(function(b){
+      var el = document.createElement('button');
+      el.className = 'btn sm' + (b.cls ? ' ' + b.cls : '');
+      el.textContent = b.label;
+      el.onclick = function(){
+        $('modal').classList.add('hide');
+        if(b.onClick) b.onClick();
+      };
+      box.appendChild(el);
+    });
+    $('modal').classList.remove('hide');
+  }
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape') $('modal').classList.add('hide');
+  });
+  $('modal').addEventListener('click', function(e){
+    if(e.target===this) this.classList.add('hide');
+  });
 
   function fmtDate(s){
     if(!s) return '—';
@@ -490,6 +567,7 @@
     });
     $('title').textContent = TITLES[name] || name;
     if(name==='letter') loadTemplate(kind);
+    if(name==='resumes') loadResumes(false);
     if(name==='search') openSearch();
     if(name==='replies') loadReplies();
     if(name==='settings') fillSettings();
@@ -506,19 +584,17 @@
       $('ver').textContent = st.version || '';
       $('foot').textContent = 'Движок ' + ((st.engine||{}).version || '?');
 
-      /* профиль в шапке */
+      /* аккаунт в шапке + список в настройках */
       var p = st.profiles || {profiles:[], active:''};
-      var sel = $('pSel'), sel2 = $('setProf');
-      [sel, sel2].forEach(function(s){ if(s) s.innerHTML=''; });
+      var sel = $('pSel');
+      sel.innerHTML='';
       (p.profiles||[]).forEach(function(it){
-        [sel, sel2].forEach(function(s){
-          if(!s) return;
-          var o=document.createElement('option');
-          o.value=it.id; o.textContent=it.name + (it.authorized?'':'  (не подключён)');
-          if(it.id===p.active) o.selected=true;
-          s.appendChild(o);
-        });
+        var o=document.createElement('option');
+        o.value=it.id; o.textContent=it.name + (it.authorized?'':'  (не подключён)');
+        if(it.id===p.active) o.selected=true;
+        sel.appendChild(o);
       });
+      renderProfiles(p);
 
       /* аккаунт */
       var s = st.status || {};
@@ -550,9 +626,13 @@
       } else {
         note($('runWarn'),'',null);
       }
+      var rc = st.resume_choice || {};
+      var rcName = rc.missing ? 'выбранное резюме не найдено на hh.ru'
+                              : (rc.title || 'все резюме');
       $('runHint').textContent = L.ok
         ? ('Письмо готово: ' + num(L.variants) + ' вариантов. За прогон уйдёт не более '
-           + num((st.search||{}).max_responses || 200) + ' откликов.')
+           + num((st.search||{}).max_responses || 200) + ' откликов.'
+           + '\nРезюме: ' + rcName + '.')
         : '';
 
       /* быстрые действия */
@@ -603,11 +683,14 @@
     });
   }
 
-  $('pSel').onchange = function(){
-    note($('actNote'),'info','Переключаю профиль, приложение перезапустится…');
-    api().switch_profile(this.value);
-  };
-  $('setProf').onchange = function(){ api().switch_profile(this.value); };
+  function switchProfile(id){
+    note($('actNote'),'info','Переключаю аккаунт, приложение перезапустится…');
+    $('actNote').classList.remove('hide');
+    note($('profNote'),'info','Переключаю аккаунт, приложение перезапустится…');
+    $('profNote').classList.remove('hide');
+    api().switch_profile(id);
+  }
+  $('pSel').onchange = function(){ switchProfile(this.value); };
 
   /* ================================================== аккаунт */
   window.onAuthEvent = function(event, message){
@@ -650,16 +733,17 @@
   $('btnRun').onclick = function(){ runApply(false); };
   $('btnDry').onclick = function(){ runApply(true); show('home'); };
 
-  function quick(btn, label, call, confirmText){
+  function quick(btn, label, call, confirmText, noteId){
     btn.onclick = function(){
       if(confirmText && !confirm(confirmText)) return;
       var old = btn.innerHTML;
+      var box = $(noteId || 'actNote');
       btn.disabled = true;
       btn.innerHTML = '<b><span class="sp-loader"></span>'+label+'</b>';
       call().then(function(r){
         btn.disabled=false; btn.innerHTML=old;
-        note($('actNote'), r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Готово');
-        $('actNote').classList.remove('hide');
+        note(box, r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Готово');
+        box.classList.remove('hide');
       });
     };
   }
@@ -970,6 +1054,193 @@
       refresh();
     });
   };
+
+  /* ================================================== аккаунты */
+  function renderProfiles(p){
+    var box=$('profList');
+    if(!box) return;
+    var list=(p&&p.profiles)||[];
+    $('profCount').textContent = list.length ? (list.length + ' шт.') : '';
+    box.innerHTML='';
+    if(!list.length){
+      box.innerHTML='<div class="muted">Аккаунтов нет.</div>';
+      return;
+    }
+    list.forEach(function(it){
+      var row=document.createElement('div'); row.className='li';
+
+      var radio=document.createElement('input');
+      radio.type='radio'; radio.name='profPick'; radio.className='pick';
+      radio.checked = it.id===p.active;
+      radio.onchange=function(){ if(it.id!==p.active) switchProfile(it.id); };
+
+      var main=document.createElement('div'); main.className='main';
+      var ttl=document.createElement('div'); ttl.className='ttl';
+      ttl.textContent=it.name || it.id;
+      var tag=document.createElement('span');
+      tag.className='tag2 ' + (it.authorized?'ok':'off');
+      tag.textContent = it.authorized ? 'вход выполнен' : 'вход не выполнен';
+      ttl.appendChild(tag);
+      if(it.id===p.active){
+        var cur=document.createElement('span');
+        cur.className='tag2 on'; cur.textContent='текущий';
+        ttl.appendChild(cur);
+      }
+      var sub=document.createElement('div'); sub.className='sub';
+      sub.textContent = it.path || '';
+      main.appendChild(ttl); main.appendChild(sub);
+      main.onclick=function(){ if(it.id!==p.active) switchProfile(it.id); };
+
+      var acts=document.createElement('div'); acts.className='acts2';
+      if(it.id!==p.active){
+        var use=document.createElement('button');
+        use.className='btn sm'; use.textContent='Выбрать';
+        use.onclick=function(e){ e.stopPropagation(); switchProfile(it.id); };
+        acts.appendChild(use);
+      }
+      var del=document.createElement('button');
+      del.className='btn sm danger'; del.textContent='Удалить';
+      del.disabled = list.length<=1;
+      if(list.length<=1) del.title='Это единственный аккаунт — удалить нельзя';
+      del.onclick=function(e){ e.stopPropagation(); askDeleteProfile(it, list.length); };
+      acts.appendChild(del);
+
+      row.appendChild(radio); row.appendChild(main); row.appendChild(acts);
+      box.appendChild(row);
+    });
+  }
+
+  function askDeleteProfile(it, total){
+    if(total<=1){
+      note($('profNote'),'warn','Это единственный аккаунт — удалить его нельзя.');
+      $('profNote').classList.remove('hide');
+      return;
+    }
+    modal('Удалить аккаунт «'+(it.name||it.id)+'»?',
+      'Папка: ' + (it.path || '—') + '\n\n' +
+      'Убрать из списка — аккаунт пропадёт из приложения, файлы останутся на диске.\n' +
+      'Удалить вместе с файлами — сотрутся вход, база откликов, письма и отчёты.',
+      [{label:'Отмена'},
+       {label:'Убрать из списка', onClick:function(){ deleteProfile(it.id,false); }},
+       {label:'Удалить вместе с файлами', cls:'danger',
+        onClick:function(){ confirmPurgeProfile(it); }}]);
+  }
+
+  function confirmPurgeProfile(it){
+    modal('Точно стереть данные «'+(it.name||it.id)+'»?',
+      'Вход, база откликов, сопроводительные письма и отчёты будут удалены '+
+      'безвозвратно. Отменить это нельзя.',
+      [{label:'Отмена'},
+       {label:'Да, стереть', cls:'danger',
+        onClick:function(){ deleteProfile(it.id,true); }}]);
+  }
+
+  function deleteProfile(id, purge){
+    note($('profNote'),'info','Удаляю…'); $('profNote').classList.remove('hide');
+    api().delete_profile(id, !!purge).then(function(r){
+      note($('profNote'), r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Готово');
+      $('profNote').classList.remove('hide');
+      if(r&&r.restarting) return;   /* удалили текущий — сейчас перезапустится */
+      refresh();
+    });
+  }
+
+  /* ================================================== резюме */
+  var RES_STATUS={published:'опубликовано', not_published:'не опубликовано',
+                  blocked:'заблокировано', correcting:'на правке'};
+
+  function resumeRow(it, selected){
+    var row=document.createElement('div'); row.className='li';
+    var id=it.id||'';
+
+    var radio=document.createElement('input');
+    radio.type='radio'; radio.name='resPick'; radio.className='pick';
+    radio.checked = id===(selected||'');
+    radio.onchange=function(){ pickResume(id); };
+
+    var main=document.createElement('div'); main.className='main';
+    var ttl=document.createElement('div'); ttl.className='ttl';
+    ttl.textContent = it.title || 'Без названия';
+    if(it.status){
+      var tag=document.createElement('span');
+      tag.className='tag2' + (it.status_id==='published' ? ' ok' : '');
+      tag.textContent = RES_STATUS[it.status_id] || it.status;
+      ttl.appendChild(tag);
+    }
+    var sub=document.createElement('div'); sub.className='sub';
+    if(it.sub){
+      sub.textContent=it.sub;
+    } else {
+      var bits=[];
+      if(it.updated_at) bits.push('обновлено ' + fmtDate(it.updated_at));
+      bits.push('просмотров ' + num(it.views||0)
+                + (it.new_views ? (' (+' + num(it.new_views) + ')') : ''));
+      if(it.invitations) bits.push('приглашений ' + num(it.invitations));
+      sub.textContent = bits.join(' · ');
+    }
+    main.appendChild(ttl); main.appendChild(sub);
+    main.onclick=function(){ radio.checked=true; pickResume(id); };
+
+    row.appendChild(radio); row.appendChild(main);
+
+    if(it.url){
+      var acts=document.createElement('div'); acts.className='acts2';
+      var open=document.createElement('button');
+      open.className='btn sm'; open.textContent='Открыть';
+      open.onclick=function(e){ e.stopPropagation(); api().open_external(it.url); };
+      acts.appendChild(open); row.appendChild(acts);
+    }
+    return row;
+  }
+
+  /* msg — что показать после перерисовки: иначе подтверждение выбора
+     затиралось бы тем же loadResumes, который его и перерисовывает. */
+  function loadResumes(force, msg, msgKind){
+    var box=$('resList');
+    box.innerHTML='<div class="muted">Загружаю список с hh.ru…</div>';
+    api().resumes_list(!!force).then(function(r){
+      r = r || {};
+      var list = r.items || [];
+      $('resCount').textContent = list.length ? (list.length + ' шт.') : '';
+      box.innerHTML='';
+      function say(kind, text){
+        note($('resNote'), kind, text);
+        if(text) $('resNote').classList.remove('hide');
+      }
+      if(!r.authorized){
+        say('warn','Сначала войдите в аккаунт hh.ru — вкладка «Настройки».');
+        box.innerHTML='<div class="muted">Нет данных.</div>';
+        return;
+      }
+      if(!list.length){
+        say('info','hh.ru не вернул ни одного резюме. '
+          + 'Если резюме есть — нажмите «Обновить список».');
+        box.innerHTML='<div class="muted">Пусто.</div>';
+        return;
+      }
+      box.appendChild(resumeRow(
+        {id:'', title:'Все резюме',
+         sub:'Ядро пройдёт по всем резюме по очереди — прежнее поведение.'},
+        r.selected));
+      list.forEach(function(it){ box.appendChild(resumeRow(it, r.selected)); });
+
+      if(msg) say(msgKind||'ok', msg);
+      else if(r.stale) say('warn','Выбранного резюме больше нет на hh.ru — '
+        + 'рассылка пойдёт по всем.');
+      else say('', null);
+    });
+  }
+
+  function pickResume(id){
+    api().select_resume(id||'').then(function(r){
+      var ok = r && r.status==='ok';
+      loadResumes(false, (r&&r.message) || (ok?'Сохранено':'Не получилось'),
+                  ok?'ok':'err');
+      refresh();
+    });
+  }
+  $('resReload').onclick=function(){ loadResumes(true); };
+  quick($('resBump'),'Поднимаю…', function(){ return api().bump_resumes(); }, null, 'resNote');
 
   $('setProfAdd').onclick=function(){
     var name=prompt('Название нового профиля (например, «Наташа»)');

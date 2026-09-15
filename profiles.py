@@ -144,6 +144,47 @@ def set_active(data_root: Path, profile_id: str) -> bool:
     return True
 
 
+def remove(data_root: Path, profile_id: str, purge: bool = False) -> dict[str, Any]:
+    """Убрать профиль из списка. purge=True — стереть и папку с данными.
+
+    Последний профиль удалить нельзя: приложению нужен хотя бы один.
+    Активный удалить можно — активным станет первый из оставшихся,
+    вызывающий код обязан перезапустить приложение.
+    """
+    state = ensure(data_root)
+    ids = [p["id"] for p in state["profiles"]]
+    if profile_id not in ids:
+        return {"status": "error", "message": "Такого профиля нет"}
+    if len(ids) <= 1:
+        return {"status": "error",
+                "message": "Это единственный профиль — удалить его нельзя."}
+
+    was_active = state.get("active") == profile_id
+    state["profiles"] = [p for p in state["profiles"] if p["id"] != profile_id]
+    if was_active:
+        state["active"] = state["profiles"][0]["id"]
+    _write(data_root, state)
+
+    purged = False
+    if purge:
+        target = profile_dir(data_root, profile_id)
+        try:
+            if target.exists():
+                shutil.rmtree(target)
+            purged = True
+        except Exception as exc:
+            # Список уже поправлен — профиль из интерфейса исчез.
+            # Честно сообщаем, что файлы остались.
+            return {"status": "ok", "purged": False, "active": state["active"],
+                    "switched": was_active,
+                    "message": f"Профиль убран из списка, но папку удалить не вышло: {exc}"}
+
+    return {"status": "ok", "purged": purged, "active": state["active"],
+            "switched": was_active,
+            "message": ("Профиль удалён вместе с данными."
+                        if purged else "Профиль убран из списка, файлы остались на диске.")}
+
+
 def rename(data_root: Path, profile_id: str, name: str) -> bool:
     state = ensure(data_root)
     for p in state["profiles"]:

@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -500,6 +501,9 @@ class AppApi(Api):
 
     SEARCH_DEFAULTS: dict[str, Any] = {
         "stop_words": "",
+        # "" / None — рассылка по всем резюме (поведение по умолчанию).
+        # Иначе id конкретного резюме: ядро принимает только одно (--resume-id).
+        "resume_id": None,
         "salary": None,
         "area": None,
         "experience": None,
@@ -542,7 +546,7 @@ class AppApi(Api):
             state["status"] = {"authorized": False, "reason": "error",
                                "error": str(exc)}
         try:
-            state["resumes"] = self.get_resumes()
+            state["resumes"] = self._resumes_raw()
         except Exception:
             state["resumes"] = []
         for key, fn in (
@@ -551,6 +555,7 @@ class AppApi(Api):
             ("engine", self.engine_state),
             ("search", self.search_settings),
             ("reports", self.list_reports),
+            ("resume_choice", self.resume_choice),
         ):
             try:
                 state[key] = fn()
@@ -570,6 +575,7 @@ class AppApi(Api):
         """Рассылка по сохранённым настройкам поиска."""
         s = self.search_settings()
         params: dict[str, Any] = {
+            "resume_id": s.get("resume_id") or None,
             "excluded_filter": s.get("stop_words") or None,
             "salary": s.get("salary") or None,
             "experience": s.get("experience") or None,
@@ -588,6 +594,93 @@ class AppApi(Api):
             params["work_format"] = ["REMOTE"]
         params = {k: v for k, v in params.items() if v is not None}
         return self.apply_vacancies(params)
+
+    # ------------------------------------------------------------- резюме
+
+    RESUMES_TTL = 60.0   # секунд; чтобы не дёргать hh.ru на каждом обновлении
+
+    def _resumes_raw(self, force: bool = False) -> list[dict[str, Any]]:
+        """Резюме с hh.ru с коротким кэшем.
+
+        app_state() вызывается по таймеру, и без кэша каждый тик уходил бы
+        запрос к API. Пустой ответ (сеть моргнула) не затирает прошлый
+        непустой список — иначе вкладка резюме мигала бы пустотой.
+        """
+        now = time.monotonic()
+        cached = getattr(self, "_resumes_cache", None)
+        if not force and cached and now - cached[0] < self.RESUMES_TTL:
+            return cached[1]
+        data = self.get_resumes() or []
+        if data or force or not cached:
+            self._resumes_cache = (now, data)
+            return data
+        return cached[1]
+
+    @staticmethod
+    def _resume_row(raw: dict[str, Any]) -> dict[str, Any]:
+        status = raw.get("status") or {}
+        counters = raw.get("counters") or {}
+        return {
+            "id": raw.get("id") or "",
+            "title": (raw.get("title") or "").strip() or "Без названия",
+            "status": status.get("name") or "",
+            "status_id": status.get("id") or "",
+            "updated_at": raw.get("updated_at") or "",
+            "created_at": raw.get("created_at") or "",
+            "url": raw.get("alternate_url") or "",
+            "views": counters.get("total_views") or 0,
+            "new_views": counters.get("new_views") or 0,
+            "invitations": counters.get("invitations") or 0,
+            "can_publish": bool(raw.get("can_publish_or_update")),
+        }
+
+    def _has_token(self) -> bool:
+        """Есть ли вообще токен. Дешевле get_status(): без похода в сеть."""
+        try:
+            client = self._tool.api_client
+            return bool(client.access_token or client.refresh_token)
+        except Exception:
+            return False
+
+    def resumes_list(self, force: bool = False) -> dict[str, Any]:
+        """Список резюме для вкладки «Резюме» плюс текущий выбор."""
+        selected = (self.search_settings().get("resume_id") or "").strip()
+        items = [self._resume_row(r) for r in self._resumes_raw(force=bool(force))]
+        known = {i["id"] for i in items}
+        # Резюме могли удалить на hh.ru — не молчим, а сообщаем в интерфейс.
+        stale = bool(selected) and bool(items) and selected not in known
+        return {
+            "items": items,
+            "selected": "" if stale else selected,
+            "stale": stale,
+            "authorized": bool(items) or self._has_token(),
+        }
+
+    def select_resume(self, resume_id: str = "") -> dict[str, Any]:
+        """Какое резюме использовать для рассылки. Пусто — все."""
+        resume_id = (resume_id or "").strip()
+        if resume_id:
+            known = {r.get("id") for r in self._resumes_raw()}
+            if known and resume_id not in known:
+                return {"status": "error",
+                        "message": "Такого резюме нет в списке — обновите его."}
+        s = self.search_settings()
+        s["resume_id"] = resume_id or None
+        res = self.save_search(s)
+        if res.get("status") == "ok":
+            res["message"] = ("Рассылка пойдёт по всем резюме."
+                              if not resume_id else "Резюме выбрано.")
+        return res
+
+    def resume_choice(self) -> dict[str, Any]:
+        """Короткая справка о выборе — для главного экрана."""
+        selected = (self.search_settings().get("resume_id") or "").strip()
+        if not selected:
+            return {"id": "", "title": "все резюме"}
+        for raw in self._resumes_raw():
+            if raw.get("id") == selected:
+                return {"id": selected, "title": (raw.get("title") or "").strip()}
+        return {"id": selected, "title": "", "missing": True}
 
     # -------------------------------------------------------- справочники
 
@@ -826,6 +919,23 @@ class AppApi(Api):
         res = profiles.import_from(self._data_root, name, source)
         if res.get("status") == "ok":
             profiles.set_active(self._data_root, res["id"])
+            self._restart_later()
+        return res
+
+    def delete_profile(self, profile_id: str, purge: bool = False) -> dict[str, Any]:
+        """Удалить аккаунт. purge=True — вместе с папкой профиля.
+
+        Если удаляли активный, приложение перезапустится на оставшийся:
+        половину состояния (конфиг, база, логгер) движок поднимает при
+        старте, на лету её не пересобрать.
+        """
+        import profiles
+
+        if not self._data_root:
+            return {"status": "error", "message": "Папка данных неизвестна"}
+        res = profiles.remove(self._data_root, profile_id, purge=bool(purge))
+        if res.get("status") == "ok" and res.get("switched"):
+            res["restarting"] = True
             self._restart_later()
         return res
 

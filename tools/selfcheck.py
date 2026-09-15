@@ -526,6 +526,184 @@ def t_app_api_letter_flow():
         assert (Path(d) / "ping.txt").exists()
 
 
+
+def t_profiles_remove():
+    """Удаление аккаунта: из списка, вместе с папкой, и защита последнего."""
+    import profiles
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        profiles.ensure(root)
+        a = profiles.add(root, "Аня")
+        b = profiles.add(root, "Наташа")
+        (profiles.profile_dir(root, a) / "config.json").write_text("{}", encoding="utf-8")
+        (profiles.profile_dir(root, b) / "config.json").write_text("{}", encoding="utf-8")
+
+        # убрать из списка — файлы на месте
+        res = profiles.remove(root, a, purge=False)
+        assert res["status"] == "ok" and res["purged"] is False, res
+        assert profiles.profile_dir(root, a).exists(), "папку стёрли, хотя не просили"
+        assert a not in {p["id"] for p in profiles.listing(root)["profiles"]}
+
+        # удалить вместе с папкой
+        res = profiles.remove(root, b, purge=True)
+        assert res["status"] == "ok" and res["purged"] is True, res
+        assert not profiles.profile_dir(root, b).exists(), "папка осталась"
+
+        # последний профиль не удаляется
+        last = profiles.listing(root)["active"]
+        res = profiles.remove(root, last)
+        assert res["status"] == "error", res
+        assert profiles.listing(root)["profiles"], "список профилей опустел"
+
+        # несуществующий
+        assert profiles.remove(root, "нет-такого")["status"] == "error"
+
+
+def t_profiles_remove_active():
+    """Удаление активного аккаунта переводит активность на оставшийся."""
+    import profiles
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        profiles.ensure(root)
+        other = profiles.add(root, "Запасной")
+        active = profiles.listing(root)["active"]
+        res = profiles.remove(root, active)
+        assert res["status"] == "ok" and res["switched"] is True, res
+        assert res["active"] == other, res
+        assert profiles.listing(root)["active"] == other
+
+
+RESUMES_RAW = [
+    {"id": "aaa", "title": "Редактор / шеф-редактор",
+     "alternate_url": "https://hh.ru/resume/aaa",
+     "status": {"id": "published", "name": "опубликовано"},
+     "updated_at": "2026-09-14 14:31:45", "created_at": "2026-03-22T19:40:48+0300",
+     "can_publish_or_update": False,
+     "counters": {"total_views": 12, "new_views": 3, "invitations": 1}},
+    # у второго нет counters и пустое название — так бывает у черновиков
+    {"id": "bbb", "title": "  ", "alternate_url": "", "status": {}},
+]
+
+
+def _api_with_resumes(root, raw=None):
+    import app_api
+    api = app_api.AppApi.__new__(app_api.AppApi)
+    api._tool = _FakeTool(root)
+    api.get_resumes = lambda: list(RESUMES_RAW if raw is None else raw)
+    return api
+
+
+def t_app_api_resumes_list():
+    import app_api
+    with tempfile.TemporaryDirectory() as d:
+        api = _api_with_resumes(Path(d))
+        api.get_status = lambda: {"authorized": True}
+        r = app_api.AppApi.resumes_list(api)
+        assert r["authorized"] and not r["stale"], r
+        assert [i["id"] for i in r["items"]] == ["aaa", "bbb"], r["items"]
+        first = r["items"][0]
+        assert first["title"] == "Редактор / шеф-редактор"
+        assert first["status"] == "опубликовано" and first["views"] == 12
+        second = r["items"][1]
+        assert second["title"] == "Без названия", second
+        assert second["views"] == 0 and second["status"] == "", second
+
+
+def t_app_api_select_resume():
+    import app_api
+    with tempfile.TemporaryDirectory() as d:
+        api = _api_with_resumes(Path(d))
+        api.get_status = lambda: {"authorized": True}
+
+        res = app_api.AppApi.select_resume(api, "aaa")
+        assert res["status"] == "ok", res
+        assert api.search_settings()["resume_id"] == "aaa"
+        assert app_api.AppApi.resume_choice(api)["title"] == "Редактор / шеф-редактор"
+
+        # выбор несуществующего резюме отклоняем
+        bad = app_api.AppApi.select_resume(api, "нет-такого")
+        assert bad["status"] == "error", bad
+        assert api.search_settings()["resume_id"] == "aaa", "настройку всё-таки затёрли"
+
+        # пусто = все резюме
+        res = app_api.AppApi.select_resume(api, "")
+        assert res["status"] == "ok", res
+        assert api.search_settings()["resume_id"] is None
+        assert app_api.AppApi.resume_choice(api)["title"] == "все резюме"
+
+
+def t_app_api_resume_stale():
+    """Резюме удалили на hh.ru — интерфейс должен об этом узнать."""
+    import app_api
+    with tempfile.TemporaryDirectory() as d:
+        api = _api_with_resumes(Path(d))
+        api.get_status = lambda: {"authorized": True}
+        app_api.AppApi.select_resume(api, "aaa")
+        api.get_resumes = lambda: [RESUMES_RAW[1]]
+        api._resumes_cache = None
+        r = app_api.AppApi.resumes_list(api, force=True)
+        assert r["stale"] is True and r["selected"] == "", r
+        assert app_api.AppApi.resume_choice(api).get("missing") is True
+
+
+def t_app_api_start_apply_passes_resume():
+    """Выбранное резюме должно доехать до ядра как --resume-id."""
+    import app_api
+    import engine
+    with tempfile.TemporaryDirectory() as d:
+        api = _api_with_resumes(Path(d))
+        api.get_status = lambda: {"authorized": True}
+        app_api.AppApi.select_resume(api, "aaa")
+        seen = {}
+        api.apply_vacancies = lambda params: seen.update(params) or {"status": "ok"}
+        app_api.AppApi.start_apply(api)
+        assert seen.get("resume_id") == "aaa", seen
+        argv = engine.build_argv("apply", {"resume_id": seen["resume_id"]})
+        assert argv == ["--resume-id", "aaa"], argv
+
+        # «все резюме» — флага быть не должно
+        app_api.AppApi.select_resume(api, "")
+        seen.clear()
+        app_api.AppApi.start_apply(api)
+        assert "resume_id" not in seen, seen
+
+
+def t_app_api_resumes_cache():
+    """Пустой ответ при сетевом сбое не должен затирать список."""
+    import app_api
+    with tempfile.TemporaryDirectory() as d:
+        api = _api_with_resumes(Path(d))
+        first = app_api.AppApi._resumes_raw(api)
+        assert len(first) == 2
+        api.get_resumes = lambda: []
+        api._resumes_cache = (0.0, first)      # делаем кэш «просроченным»
+        again = app_api.AppApi._resumes_raw(api)
+        assert len(again) == 2, "сетевой сбой обнулил список резюме"
+        forced = app_api.AppApi._resumes_raw(api, force=True)
+        assert forced == [], "принудительное обновление должно отдавать факт"
+
+
+def t_ui_theme_button_has_no_label():
+    """Кнопка темы — только иконка; подпись живёт в title, а не на кнопке."""
+    src = (BUILD / "ui" / "theme.js").read_text(encoding="utf-8")
+    body = src[src.find("function updateBtn"):]
+    body = body[:body.find("\n    }") + 1]
+    assert "innerHTML" not in body, "в кнопку всё ещё пишется разметка с подписью"
+    m = re.search(r"btn\.textContent\s*=\s*isDark\s*\?\s*'([^']*)'\s*:\s*'([^']*)'", body)
+    assert m, "не нашёл присваивания textContent кнопке темы"
+    for label in m.groups():
+        assert not re.search(r"[A-Za-zА-Яа-яЁё]", label), f"в кнопке осталась подпись: {label!r}"
+    assert "btn.title" in body, "нет подсказки title у кнопки темы"
+
+
+def t_ui_resumes_tab_present():
+    html = (BUILD / "ui" / "app.html").read_text(encoding="utf-8")
+    for needle in ('id="s-resumes"', 'data-s="resumes"', 'id="resList"',
+                   'id="profList"', 'id="modal"'):
+        assert needle in html, f"нет {needle}"
+    assert 'id="setProf"' not in html, "остался старый select профилей"
+
+
 # --------------------------------------------------------------- telegram_bot
 
 def t_telegram_import():

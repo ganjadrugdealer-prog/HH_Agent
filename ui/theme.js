@@ -45,6 +45,15 @@
         body.dark-theme .btn.primary:hover:not(:disabled) {
             background-color: var(--accent2);
         }
+        body.dark-theme .btn.danger {
+            /* в светлой палитре рамка #f3c9c5 — на тёмном фоне она светится */
+            border-color: #5a2a26;
+            color: var(--err);
+        }
+        body.dark-theme .btn.danger:hover:not(:disabled) {
+            background-color: var(--errbg);
+            border-color: #7a3a34;
+        }
         body.dark-theme .side {
             background-color: #171717;
         }
@@ -73,19 +82,21 @@
             background: var(--dim);
         }
 
-        /* Toggle Button Styles */
+        /* Toggle Button Styles — только иконка, без подписи */
         #theme-toggle-btn {
             background: var(--card);
             border: 1px solid var(--line);
             color: var(--ink);
-            border-radius: 20px;
-            padding: 4px 12px;
-            font-size: 13px;
-            font-weight: 600;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            font-size: 14px;
+            line-height: 1;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
             transition: all 0.2s;
             margin-left: 10px;
         }
@@ -127,7 +138,13 @@
     btn.id = 'theme-toggle-btn';
 
     function updateBtn() {
-        btn.innerHTML = isDark ? '<span>🌙</span> Тьма' : '<span>☀️</span> Свет';
+        // Только иконка: подпись «Свет/Тьма» ничего не добавляла,
+        // а место в шапке занимала.
+        btn.textContent = isDark ? '🌙' : '☀️';
+        var hint = isDark ? 'Тёмная тема — переключить на светлую'
+                          : 'Светлая тема — переключить на тёмную';
+        btn.title = hint;
+        btn.setAttribute('aria-label', hint);
     }
     updateBtn();
 
