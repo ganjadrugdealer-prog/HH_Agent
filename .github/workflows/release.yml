@@ -42,7 +42,9 @@ jobs:
 
       - name: Generate macOS icon (macOS only)
         if: matrix.os == 'macos-latest'
-        run: sips -s format icns icon.png --out icon.icns
+        run: |
+          sips -s format icns icon.png --out icon.icns
+          test -f icon.icns || { echo "::error::sips не собрал icon.icns"; exit 1; }
 
       - name: Build executable
         run: python build.py
@@ -70,6 +72,9 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
+    # Публикуем только по тегу. workflow_dispatch нужен, чтобы проверить
+    # саму сборку (особенно macOS), ничего при этом не выпуская.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -55,20 +55,39 @@ def chromium_executable() -> str | None:
         return None
 
 
+# Раскладка playwright различается по платформам; имя исполняемого файла тоже.
+CHROMIUM_LAYOUT = {
+    "win32": ("chrome.exe", (("chrome-win64",), ("chrome-win",))),
+    "darwin": ("Chromium", (("chrome-mac", "Chromium.app", "Contents", "MacOS"),
+                            ("chrome-mac-arm64", "Chromium.app", "Contents", "MacOS"))),
+    "linux": ("chrome", (("chrome-linux",),)),
+}
+
+
 def chromium_installed() -> bool:
     """Быстрая проверка без запуска драйвера playwright.
 
     Драйвер поднимать здесь нельзя: функция вызывается до создания окна,
     и sync_playwright() в этот момент роняет приложение.
+
+    Искать только chrome.exe нельзя: на macOS бинарь называется Chromium
+    и лежит внутри .app, на Linux — chrome. С прежней проверкой мастер на
+    этих системах считал бы браузер неустановленным всегда.
     """
     d = browsers_dir()
     if not d.exists():
         return False
+    name, fast_paths = CHROMIUM_LAYOUT.get(sys.platform, CHROMIUM_LAYOUT["linux"])
     for item in d.glob("chromium-*"):
-        if (item / "chrome-win64" / "chrome.exe").exists():
-            return True
-        if any(item.rglob("chrome.exe")):
-            return True
+        for rel in fast_paths:
+            if (item.joinpath(*rel) / name).exists():
+                return True
+        # нештатная раскладка — ищем перебором, это редкий путь
+        try:
+            if any(item.rglob(name)):
+                return True
+        except OSError:
+            continue
     return False
 
 

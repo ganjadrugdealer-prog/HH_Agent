@@ -825,6 +825,47 @@ def t_no_pyflakes_problems():
     assert not out, "\n".join(out)
 
 
+
+def t_chromium_detect_cross_platform():
+    """Chromium ищется по имени бинаря своей ОС, а не только chrome.exe."""
+    import app_api
+    layouts = {
+        "win32":  "chromium-1234/chrome-win64/chrome.exe",
+        "darwin": "chromium-1234/chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+        "linux":  "chromium-1234/chrome-linux/chrome",
+    }
+    real_platform = sys.platform
+    real_env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    try:
+        for plat, rel in layouts.items():
+            with tempfile.TemporaryDirectory() as d:
+                exe = Path(d) / rel
+                exe.parent.mkdir(parents=True)
+                exe.write_text("x")
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = d
+                sys.platform = plat
+                assert app_api.chromium_installed(), f"{plat}: браузер не найден"
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = d
+            sys.platform = real_platform
+            assert not app_api.chromium_installed(), "пустая папка выдана за установленный браузер"
+    finally:
+        sys.platform = real_platform
+        if real_env is None:
+            os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
+        else:
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = real_env
+
+
+def t_release_workflow_guarded():
+    """Ручной прогон workflow не должен пытаться опубликовать релиз."""
+    wf = (BUILD / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch" in wf, "нет ручного запуска сборки"
+    release = wf[wf.find("  release:"):]
+    assert "startsWith(github.ref, 'refs/tags/')" in release, \
+        "job release не ограничен тегами — ручной прогон упадёт на публикации"
+
+
 # ----------------------------------------------------------------------- ui
 
 def t_ui_encoding():
