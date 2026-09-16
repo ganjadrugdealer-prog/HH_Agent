@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Build
+build/
+dist/
+*.egg-info/
+*.egg
+# hh_agent.spec — часть репозитория, его игнорировать нельзя.
+
+# Application Data
+data/
+*.log
+crash.log
+selftest.log
+
+# IDEs
+.idea/
+.vscode/
+*.swp

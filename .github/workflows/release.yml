@@ -1,0 +1,131 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags matching v*, e.g. v1.0, v20.15.10
+  workflow_dispatch:
+
+env:
+  # windows-раннер держит консоль в cp1252, а логи у нас русские
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: HH-Agent.exe
+            asset_name: HH-Agent-Windows.exe
+          - os: macos-latest
+            arch: arm64
+            artifact_name: HH-Agent-arm64.dmg
+            asset_name: HH-Agent-macOS-arm64.dmg
+          # Intel-мак: отдельная сборка, arm64-образ на нём не запускается
+          - os: macos-15-intel
+            arch: x86_64
+            artifact_name: HH-Agent-intel.dmg
+            asset_name: HH-Agent-macOS-intel.dmg
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      # Ядро hh-applicant-tool требует Python >= 3.11.
+      # На 3.10 скачанное ядро не импортируется (tomllib и синтаксис 3.11).
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Sanity check (imports, spintax, стоп-слова)
+        run: python tools/ci_check.py
+
+      - name: Generate macOS icon (macOS only)
+        if: runner.os == 'macOS'
+        run: |
+          sips -s format icns icon.png --out icon.icns
+          test -f icon.icns || { echo "::error::sips не собрал icon.icns"; exit 1; }
+
+      - name: Build executable
+        run: python build.py
+
+      - name: Check macOS binary architecture (macOS only)
+        if: runner.os == 'macOS'
+        run: |
+          archs=$(lipo -archs dist/HH-Agent.app/Contents/MacOS/HH-Agent)
+          echo "binary archs: $archs"
+          case " $archs " in
+            *" ${{ matrix.arch }} "*) ;;
+            *) echo "::error::expected ${{ matrix.arch }}, got: $archs"; exit 1 ;;
+          esac
+
+      - name: Package macOS App into DMG (macOS only)
+        if: runner.os == 'macOS'
+        run: |
+          npm install -g create-dmg
+          create-dmg dist/HH-Agent.app dist/ || true
+          dmg=$(ls dist/*.dmg 2>/dev/null | head -n1 || true)
+          if [ -n "$dmg" ]; then
+            mv "$dmg" dist/${{ matrix.artifact_name }}
+          else
+            echo "::error::create-dmg не собрал образ"
+            exit 1
+          fi
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    # Публикуем только по тегу. workflow_dispatch нужен, чтобы проверить
+    # саму сборку (особенно macOS), ничего при этом не выпуская.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: HH-Agent-Windows.exe
+          path: dist_win
+
+      - name: Download macOS arm64 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: HH-Agent-macOS-arm64.dmg
+          path: dist_mac_arm64
+
+      - name: Download macOS Intel Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: HH-Agent-macOS-intel.dmg
+          path: dist_mac_intel
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist_win/HH-Agent.exe
+            dist_mac_arm64/HH-Agent-arm64.dmg
+            dist_mac_intel/HH-Agent-intel.dmg
+          # иначе релиз опубликуется пустым, если файла нет
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false

@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>HH Agent</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --line2:#eef0f3; --soft:#f1f3f6;
+    --ink:#131722; --dim:#667085; --faint:#98a2b3;
+    --accent:#2563eb; --accent2:#1d4fd7;
+    --ok:#12854a; --okbg:#e8f6ee; --err:#b42318; --errbg:#fdeceb;
+    --warn:#8a5a00; --warnbg:#fff6e6;
+    --b1:#e8f0ff; --b2:#eaf7ee; --b3:#fdf0e3;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+    font:14px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+  button,input,select,textarea{font:inherit}
+
+  .shell{display:flex;height:100%}
+
+  /* ---------------- боковое меню ---------------- */
+  .side{width:212px;flex:none;background:var(--card);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:16px 12px}
+  .brand{font-weight:750;font-size:16px;letter-spacing:-.02em;padding:4px 10px 16px;
+    display:flex;align-items:baseline;gap:7px}
+  .brand small{font-weight:500;font-size:11px;color:var(--faint);letter-spacing:0}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    border:0;background:transparent;color:var(--dim);font-size:13.5px;font-weight:600;
+    padding:9px 10px;border-radius:9px;cursor:pointer}
+  .nav button:hover{background:var(--soft);color:var(--ink)}
+  .nav button.on{background:var(--b1);color:var(--accent)}
+  .nav button .ic{width:17px;text-align:center;font-size:14px;flex:none}
+  .nav button .badge{margin-left:auto;font-size:10.5px;font-weight:700;padding:1px 6px;
+    border-radius:20px;background:var(--errbg);color:var(--err)}
+  .grow{flex:1}
+  .foot{padding:10px;font-size:11px;color:var(--faint)}
+
+  /* ---------------- шапка ---------------- */
+  .body{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{flex:none;display:flex;align-items:center;gap:12px;padding:14px 22px;
+    background:var(--card);border-bottom:1px solid var(--line)}
+  .top h1{margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em}
+  .prof{display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+  .dot.off{background:#c9ced6}
+  .prof select{border:1px solid var(--line);border-radius:9px;padding:7px 10px;
+    background:var(--card);color:var(--ink);font-weight:600;font-size:13px;min-width:160px}
+
+  main{flex:1;overflow:auto;padding:20px 22px 40px}
+  .screen{display:none;max-width:1000px}
+  .screen.on{display:block}
+
+  /* ---------------- общее ---------------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;margin-bottom:14px}
+  .card h3{margin:0 0 12px;font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint)}
+  .card h3 .r{float:right;text-transform:none;letter-spacing:0;font-size:12px;
+    font-weight:500;color:var(--dim)}
+  .muted{color:var(--dim);font-size:13px;white-space:pre-line}
+  .row{display:flex;gap:10px;align-items:center}
+  .row.wrap{flex-wrap:wrap}
+  .sp{flex:1}
+
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:9px;padding:9px 15px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .btn:hover:not(:disabled){background:var(--soft)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover:not(:disabled){background:var(--accent2)}
+  .btn.danger{color:var(--err);border-color:#f3c9c5}
+  .btn.danger:hover:not(:disabled){background:var(--errbg)}
+  .btn.sm{padding:6px 11px;font-size:12.5px}
+
+  .note{font-size:13px;padding:10px 13px;border-radius:10px;margin-top:10px;
+    display:flex;gap:9px;align-items:flex-start;white-space:pre-wrap}
+  .note b{flex:none}
+  .note.ok{background:var(--okbg);color:var(--ok)}
+  .note.err{background:var(--errbg);color:var(--err)}
+  .note.warn{background:var(--warnbg);color:var(--warn)}
+  .note.info{background:var(--b1);color:#1e40af}
+  .hide{display:none !important}
+
+  .sp8{height:8px}
+  label.f{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:5px}
+  .f input[type=text],.f input[type=number],.f input[type=password],.f select,
+  input.t,select.t,textarea.t{width:100%;border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;background:var(--card);color:var(--ink)}
+  textarea.t{resize:vertical;font:inherit;min-height:74px}
+  input.t::placeholder{color:var(--faint)}
+  .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .field{min-width:0}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;
+    padding:7px 0}
+  .chk input{width:16px;height:16px;accent-color:var(--accent)}
+  .hint{font-size:12px;color:var(--faint);margin-top:5px}
+
+  /* ---------------- главная ---------------- */
+  .hero{display:flex;gap:14px;align-items:stretch;margin-bottom:14px}
+  .hero .card{flex:1;margin:0}
+  .runbox{display:flex;flex-direction:column;justify-content:center}
+  .btn.big{padding:15px 22px;font-size:15.5px;border-radius:12px;width:100%}
+  .acct{max-width:330px;flex:none !important}
+  .acct .name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:9px}
+  .acct .sub{font-size:12.5px;color:var(--dim);margin:3px 0 12px}
+
+  .acts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .act{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:15px 16px;text-align:left;cursor:pointer;display:block;color:var(--ink)}
+  .act:hover:not(:disabled){background:var(--soft);border-color:#d3d8de}
+  .act:disabled{opacity:.5;cursor:default}
+  .act b{display:block;font-size:14px;font-weight:650;margin-bottom:3px}
+  .act small{display:block;color:var(--dim);font-size:12px;line-height:1.35}
+
+  .rep{display:flex;align-items:center;gap:12px;padding:10px 0;
+    border-bottom:1px solid var(--line2);font-size:13.5px}
+  .rep:last-child{border-bottom:0}
+  .rep .d{color:var(--dim);font-size:12.5px;width:120px;flex:none}
+  .rep .n{font-weight:650}
+  .rep .tag{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:var(--okbg);color:var(--ok)}
+  .rep .tag.bad{background:var(--errbg);color:var(--err)}
+
+  /* ---------------- редактор писем ---------------- */
+  .tabs{display:flex;gap:4px;background:var(--soft);padding:3px;border-radius:9px}
+  .tabs button{border:0;background:transparent;color:var(--dim);font-size:13px;
+    font-weight:600;padding:6px 13px;border-radius:7px;cursor:pointer}
+  .tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(16,24,40,.08)}
+  .edwrap{display:flex;gap:14px;align-items:flex-start}
+  .edmain{flex:1;min-width:0}
+  .edside{width:270px;flex:none}
+  .stack{position:relative;height:330px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .stack pre,.stack textarea{position:absolute;inset:0;margin:0;padding:14px 16px;
+    border:0;outline:0;font:13.5px/1.62 "Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+    white-space:pre-wrap;word-break:break-word;overflow:auto;background:transparent}
+  .stack pre{pointer-events:none;color:var(--ink)}
+  .stack textarea{color:transparent;caret-color:var(--ink);resize:none}
+  .stack textarea::selection{background:#b9d3ff;color:transparent}
+  .blk{border-radius:4px;padding:0 1px}
+  .d0{background:var(--b1)} .d1{background:var(--b2)} .d2{background:var(--b3)}
+  .ph{background:#efe7ff;color:#5b21b6;border-radius:4px;padding:0 2px;font-weight:600}
+  .bad{background:#ffd7d3;color:var(--err);border-radius:4px;font-weight:700}
+  .big-n{font-size:25px;font-weight:750;letter-spacing:-.02em;line-height:1.1}
+  .big-n small{display:block;font-size:12px;font-weight:500;color:var(--dim);
+    margin-top:3px;letter-spacing:0}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{font-size:12px;border:1px solid var(--line);background:#fafbfc;color:#5b21b6;
+    border-radius:7px;padding:4px 8px;cursor:pointer;font-weight:600}
+  .chip:hover{background:#f3edff;border-color:#d9c9ff}
+  .card p.tip{margin:0 0 8px;font-size:12.5px;color:var(--dim)}
+  .card p.tip:last-child{margin-bottom:0}
+  code{background:var(--soft);border-radius:4px;padding:1px 4px;
+    font:12px "Cascadia Mono",Consolas,monospace;color:var(--ink)}
+  .sample{background:var(--card);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:10px;padding:11px 13px;
+    white-space:pre-wrap;font-size:13px;margin-top:9px}
+  .sample i{display:block;font-style:normal;font-size:10.5px;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+
+  /* ---------------- отклики ---------------- */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint);padding:0 10px 9px 0}
+  td{padding:9px 10px 9px 0;border-top:1px solid var(--line2);vertical-align:top}
+  td a{color:var(--accent);text-decoration:none}
+  td a:hover{text-decoration:underline}
+  .st{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .st.active{background:var(--b1);color:#1e40af}
+  .st.invitation{background:var(--okbg);color:var(--ok)}
+  .st.discard{background:var(--errbg);color:var(--err)}
+  .st.other{background:var(--soft);color:var(--dim)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .kpi b{display:block;font-size:24px;font-weight:750;letter-spacing:-.02em}
+  .kpi small{color:var(--dim);font-size:12px}
+
+  .more{border:0;background:transparent;color:var(--accent);font-weight:600;
+    font-size:13px;cursor:pointer;padding:4px 0}
+  /* ===== списки аккаунтов и резюме ===== */
+  .list{display:flex;flex-direction:column}
+  .li{display:flex;align-items:center;gap:12px;padding:12px 0;
+    border-bottom:1px solid var(--line2)}
+  .li:last-child{border-bottom:0}
+  .li .pick{width:16px;height:16px;accent-color:var(--accent);flex:none;margin:0;cursor:pointer}
+  .li .main{flex:1;min-width:0;cursor:pointer}
+  .li .ttl{font-weight:650;font-size:14px;display:flex;align-items:center;
+    gap:8px;flex-wrap:wrap}
+  .li .sub{font-size:12px;color:var(--dim);margin-top:3px;word-break:break-all}
+  .li .acts2{display:flex;gap:8px;flex:none}
+  .tag2{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:var(--soft);color:var(--dim);white-space:nowrap}
+  .tag2.on{background:var(--b1);color:var(--accent)}
+  .tag2.ok{background:var(--okbg);color:var(--ok)}
+  .tag2.off{background:var(--errbg);color:var(--err)}
+
+  /* ===== модальное окно ===== */
+  .modal{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;
+    align-items:center;justify-content:center;z-index:999;padding:20px}
+  .modal .box{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px;max-width:460px;width:100%;
+    box-shadow:0 14px 44px rgba(16,24,40,.28)}
+  .modal h4{margin:0 0 10px;font-size:15.5px;font-weight:700;letter-spacing:-.01em}
+  .modal .txt{font-size:13.5px;color:var(--dim);white-space:pre-line;line-height:1.5}
+  .modal .row{margin-top:18px;flex-wrap:wrap;justify-content:flex-end}
+
+  .sp-loader{display:inline-block;width:12px;height:12px;border:2px solid #cbd5e1;
+    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+    vertical-align:-1px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="side">
+    <div class="brand">HH Agent <small id="ver"></small></div>
+    <div class="nav" id="nav">
+      <button data-s="home" class="on"><span class="ic">🏠</span>Главная</button>
+      <button data-s="letter"><span class="ic">✍️</span>Сопроводительное<span class="badge hide" id="navBadge">!</span></button>
+      <button data-s="resumes"><span class="ic">📄</span>Резюме</button>
+      <button data-s="search"><span class="ic">🎛</span>Настройки поиска</button>
+      <button data-s="replies"><span class="ic">💬</span>Отклики</button>
+      <button data-s="settings"><span class="ic">⚙️</span>Настройки</button>
+    </div>
+    <div class="grow"></div>
+    <div class="foot" id="foot"></div>
+  </nav>
+
+  <div class="body">
+    <header class="top">
+      <h1 id="title">Главная</h1>
+      <div class="sp"></div>
+      <div class="prof">
+        <span class="dot off" id="pDot"></span>
+        <select id="pSel"></select>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- ============================ ГЛАВНАЯ -->
+      <section class="screen on" id="s-home">
+        <div class="hero">
+          <div class="card acct">
+            <h3>Аккаунт hh.ru</h3>
+            <div class="name"><span class="dot off" id="aDot"></span><span id="aName">—</span></div>
+            <div class="sub" id="aSub">Проверяю…</div>
+            <div class="row">
+              <button class="btn sm" id="aLogin">Войти</button>
+              <button class="btn sm danger hide" id="aLogout">Выйти</button>
+            </div>
+            <div class="note info hide" id="aNote"></div>
+          </div>
+
+          <div class="card runbox">
+            <h3>Рассылка откликов</h3>
+            <button class="btn primary big" id="btnRun" disabled>Запустить рассылку</button>
+            <div class="note warn hide" id="runWarn"></div>
+            <div class="hint" id="runHint"></div>
+          </div>
+        </div>
+
+        <div class="acts">
+          <button class="act" id="aBump"><b>🔝 Поднять резюме</b>
+            <small>Поднимает все резюме в поиске. HH разрешает раз в 4 часа.</small></button>
+          <button class="act" id="aClear"><b>🧹 Отказы в архив</b>
+            <small>Убирает отказы из активных откликов, чтобы список не зарастал.</small></button>
+          <button class="act" id="aPing"><b>💬 Пинги по чатам</b>
+            <small>Напоминание о себе во все активные чаты. Каждому — свой вариант.</small></button>
+        </div>
+        <div class="note hide" id="actNote"></div>
+
+        <div class="card">
+          <h3>Последние прогоны <span class="r"><button class="more" id="openReports">Папка с отчётами</button></span></h3>
+          <div id="reports"><div class="muted">Пока ни одного прогона.</div></div>
+        </div>
+      </section>
+
+      <!-- ============================ ПИСЬМО -->
+      <section class="screen" id="s-letter">
+        <div class="row" style="margin-bottom:14px">
+          <div class="tabs">
+            <button id="tabLetter" class="on">Сопроводительное</button>
+            <button id="tabPing">Пинги</button>
+          </div>
+          <div class="sp"></div>
+          <button class="btn" id="btnSamples">Показать примеры</button>
+          <button class="btn primary" id="btnSave" disabled>Сохранить</button>
+        </div>
+
+        <div class="edwrap">
+          <div class="edmain">
+            <div class="stack">
+              <pre id="hl"></pre>
+              <textarea id="ed" spellcheck="false"></textarea>
+            </div>
+            <div id="lStatus"></div>
+            <div id="samples"></div>
+          </div>
+
+          <aside class="edside">
+            <div class="card">
+              <h3>Уникальных вариантов</h3>
+              <div class="big-n" id="cnt">—<small id="cntNote">Начните печатать</small></div>
+            </div>
+            <div class="card">
+              <h3>Подстановки</h3>
+              <div class="chips" id="chips"></div>
+              <p class="tip" style="margin-top:9px">Нажмите — вставится в текст.
+                HH подставит настоящие значения при отправке.</p>
+            </div>
+            <div class="card">
+              <h3>Как писать</h3>
+              <p class="tip"><code>{Привет|Здравствуйте}</code> — каждому уйдёт случайный вариант.</p>
+              <p class="tip">Блоки вкладываются: <code>{Добрый день{!|,}|Здравствуйте}</code>.</p>
+              <p class="tip">Следите за падежами: варианты должны склеиваться в живую фразу
+                в любом сочетании.</p>
+              <p class="tip">Знак <code>%</code> сам по себе ломает отправку. Нужен процент —
+                пишите <code>%%</code>.</p>
+            </div>
+            <div class="card" id="tipsLetter">
+              <h3>Что писать</h3>
+              <p class="tip">Первая строка решает всё: кто вы и на какую вакансию.</p>
+              <p class="tip">Три-четыре абзаца. Длинные письма не дочитывают.</p>
+              <p class="tip">Не пересказывайте резюме — на него есть ссылка.</p>
+            </div>
+            <div class="card">
+              <h3>Ещё</h3>
+              <div class="row">
+                <button class="btn sm" id="btnDefault" style="flex:1">Образец</button>
+                <button class="btn sm" id="btnReload" style="flex:1">Отменить</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============================ РЕЗЮМЕ -->
+      <section class="screen" id="s-resumes">
+        <div class="card">
+          <h3>Резюме на hh.ru <span class="r" id="resCount"></span></h3>
+          <div class="muted" style="margin-bottom:12px">С каким резюме рассылать отклики.
+Ядро умеет брать за прогон только одно резюме, поэтому выбор одиночный.
+«Все резюме» — прежнее поведение: ядро пройдёт по ним по очереди.</div>
+          <div class="row wrap" style="margin-bottom:4px">
+            <button class="btn sm" id="resReload">Обновить список</button>
+            <div class="sp"></div>
+            <button class="btn sm" id="resBump">Поднять в поиске</button>
+          </div>
+          <div class="note hide" id="resNote"></div>
+          <div class="list" id="resList"></div>
+        </div>
+      </section>
+
+      <!-- ============================ НАСТРОЙКИ ПОИСКА -->
+      <section class="screen" id="s-search">
+        <div class="card">
+          <h3>Стоп-слова</h3>
+          <textarea id="fStop" class="t" rows="3"
+            placeholder="продажи, стажировка, вожатый, бухгалтер"></textarea>
+          <div class="hint">Через запятую или с новой строки. Вакансия отсеивается,
+            если слово встретилось <b>в названии</b>. Учитываются словоформы:
+            «продажи» поймает «менеджер по продажам».</div>
+          <div id="stopPrev" class="note info hide"></div>
+        </div>
+
+        <div class="card">
+          <h3>Основные фильтры</h3>
+          <div class="fields">
+            <div class="field"><label class="f">Зарплата от, ₽</label>
+              <input id="fSalary" class="t" type="number" placeholder="не важно"></div>
+            <div class="field"><label class="f">Регион</label>
+              <select id="fArea" class="t"></select></div>
+            <div class="field"><label class="f">Опыт работы</label>
+              <select id="fExp" class="t">
+                <option value="">Любой</option>
+                <option value="noExperience">Нет опыта</option>
+                <option value="between1And3">От 1 до 3 лет</option>
+                <option value="between3And6">От 3 до 6 лет</option>
+                <option value="moreThan6">Более 6 лет</option>
+              </select></div>
+            <div class="field"><label class="f">Вакансии за последние, дней</label>
+              <input id="fPeriod" class="t" type="number" placeholder="все"></div>
+          </div>
+          <label class="chk"><input type="checkbox" id="fRemote">Только удалённая работа</label>
+          <div class="hint">Поисковой строки здесь нет намеренно: как только она задана,
+            движок уходит с рекомендаций HH на обычный поиск, и подборка становится хуже.
+            Все фильтры работают и по рекомендациям.</div>
+        </div>
+
+        <button class="more" id="toggleMore">Ещё настройки ▾</button>
+        <div class="card hide" id="moreBox" style="margin-top:10px">
+          <h3>Тонкая настройка</h3>
+          <div class="fields">
+            <div class="field"><label class="f">Сортировка</label>
+              <select id="fOrder" class="t">
+                <option value="">По умолчанию</option>
+                <option value="publication_time">Сначала новые</option>
+                <option value="salary_desc">Зарплата по убыванию</option>
+                <option value="salary_asc">Зарплата по возрастанию</option>
+                <option value="relevance">По релевантности</option>
+              </select></div>
+            <div class="field"><label class="f">Максимум откликов за прогон</label>
+              <input id="fMax" class="t" type="number" placeholder="200"></div>
+            <div class="field"><label class="f">Страниц поиска</label>
+              <input id="fPages" class="t" type="number" placeholder="20"></div>
+            <div class="field"><label class="f">Вакансий на странице</label>
+              <input id="fPer" class="t" type="number" placeholder="100"></div>
+          </div>
+          <label class="chk"><input type="checkbox" id="fOnlySalary">Только вакансии с указанной зарплатой</label>
+          <label class="chk"><input type="checkbox" id="fSkipTests" checked>Пропускать вакансии с тестами</label>
+          <div class="hint">Тесты требуют входа через браузер и часто упираются в капчу.
+            Пауза между запросами к HH задаётся случайно (0,8–2,4 с) и не настраивается —
+            фиксированный интервал выглядит как робот.</div>
+        </div>
+
+        <div class="row" style="margin-top:14px">
+          <button class="btn primary" id="btnSaveSearch">Сохранить настройки</button>
+          <div class="sp"></div>
+          <button class="btn" id="btnDry">Холостой прогон</button>
+        </div>
+        <div class="note hide" id="searchNote"></div>
+      </section>
+
+      <!-- ============================ ОТКЛИКИ -->
+      <section class="screen" id="s-replies">
+        <div class="kpis" id="kpis"></div>
+        <div class="card">
+          <h3>Отклики <span class="r">
+            <button class="more" id="btnSync">Синхронизировать с hh.ru</button></span></h3>
+          <div id="repNote"></div>
+          <div style="overflow:auto">
+            <table id="repTable">
+              <thead><tr><th style="width:96px">Дата</th><th>Вакансия</th>
+                <th style="width:210px">Работодатель</th><th style="width:120px">Статус</th></tr></thead>
+              <tbody id="repBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ НАСТРОЙКИ -->
+      <section class="screen" id="s-settings">
+        <div class="card">
+          <h3>Аккаунты <span class="r" id="profCount"></span></h3>
+          <div class="muted" style="margin-bottom:10px">Каждый аккаунт — отдельный профиль hh.ru
+            со своим входом, письмом, базой и отчётами.</div>
+          <div class="list" id="profList"></div>
+          <div class="row wrap" style="margin-top:12px">
+            <button class="btn sm" id="setProfAdd">+ Новый аккаунт</button>
+            <button class="btn sm" id="setProfImport">Импорт из папки бота</button>
+          </div>
+          <div class="note hide" id="profNote"></div>
+        </div>
+
+        <div class="card">
+          <h3>Telegram <span class="r">необязательно</span></h3>
+          <div class="muted" style="margin-bottom:10px">Пульт и уведомления в телефон.
+            Создайте бота у <b>@BotFather</b> и вставьте токен.</div>
+          <div class="fields">
+            <div class="field"><label class="f">Токен бота</label>
+              <input id="tgToken" class="t" type="text" placeholder="123456:AA..."></div>
+            <div class="field"><label class="f">Ваш chat_id</label>
+              <input id="tgChat" class="t" type="text" placeholder="нажмите «Определить»"></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn sm" id="tgDetect">Определить мой ID</button>
+            <button class="btn sm" id="tgCheck">Проверить связь</button>
+            <div class="sp"></div>
+            <button class="btn sm" id="tgOff">Отключить</button>
+            <button class="btn sm primary" id="tgSave">Сохранить</button>
+          </div>
+          <div class="note hide" id="tgNote"></div>
+        </div>
+
+        <div class="card">
+          <h3>Движок и данные</h3>
+          <div class="muted" id="engInfo">—</div>
+          <div class="row" style="margin-top:11px">
+            <button class="btn sm" id="openReports2">Папка с отчётами</button>
+            <button class="btn sm" id="openData">Папка с данными</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Аккаунт hh.ru</h3>
+          <div class="muted" id="setAcct">—</div>
+          <div class="row" style="margin-top:11px">
+            <button class="btn sm" id="setLogin">Сменить аккаунт</button>
+            <button class="btn sm danger" id="setLogout">Выйти</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="modal hide" id="modal">
+  <div class="box">
+    <h4 id="mTitle"></h4>
+    <div class="txt" id="mText"></div>
+    <div class="row" id="mBtns"></div>
+  </div>
+</div>
+<script>
+(function () {
+  var api = function () { return window.pywebview && window.pywebview.api; };
+  var $ = function (id) { return document.getElementById(id); };
+  var TITLES = {home:'Главная', letter:'Шаблоны сообщений', resumes:'Резюме',
+                search:'Настройки поиска', replies:'Отклики', settings:'Настройки'};
+  var state = {};
+  var areasLoaded = false;
+  var running = false;
+
+  /* ================================================== утилиты */
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function num(n){return (Number(n)||0).toLocaleString('ru-RU');}
+
+  function note(el, kind, text){
+    if(!text){ el.className='note hide'; el.textContent=''; return; }
+    el.className='note '+kind;
+    el.innerHTML='<b>'+(kind==='err'?'✕':kind==='warn'?'!':kind==='ok'?'✓':'i')+'</b><span></span>';
+    el.lastChild.textContent=text;
+  }
+
+  /* маленькое модальное окно вместо цепочки confirm() */
+  function modal(title, text, buttons){
+    $('mTitle').textContent = title;
+    $('mText').textContent = text;
+    var box = $('mBtns'); box.innerHTML = '';
+    (buttons||[]).forEach(function(b){
+      var el = document.createElement('button');
+      el.className = 'btn sm' + (b.cls ? ' ' + b.cls : '');
+      el.textContent = b.label;
+      el.onclick = function(){
+        $('modal').classList.add('hide');
+        if(b.onClick) b.onClick();
+      };
+      box.appendChild(el);
+    });
+    $('modal').classList.remove('hide');
+  }
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape') $('modal').classList.add('hide');
+  });
+  $('modal').addEventListener('click', function(e){
+    if(e.target===this) this.classList.add('hide');
+  });
+
+  function fmtDate(s){
+    if(!s) return '—';
+    var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+    return m ? m[3]+'.'+m[2]+'.'+m[1] : String(s).slice(0,10);
+  }
+
+  /* ================================================== навигация */
+  function show(name){
+    document.querySelectorAll('.screen').forEach(function(s){
+      s.classList.toggle('on', s.id === 's-'+name);
+    });
+    document.querySelectorAll('#nav button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.s === name);
+    });
+    $('title').textContent = TITLES[name] || name;
+    if(name==='letter') loadTemplate(kind);
+    if(name==='resumes') loadResumes(false);
+    if(name==='search') openSearch();
+    if(name==='replies') loadReplies();
+    if(name==='settings') fillSettings();
+  }
+  document.querySelectorAll('#nav button').forEach(function(b){
+    b.onclick = function(){ show(b.dataset.s); };
+  });
+
+  /* ================================================== общее состояние */
+  function refresh(){
+    if(!api()) return;
+    return api().app_state().then(function(st){
+      state = st || {};
+      $('ver').textContent = st.version || '';
+      $('foot').textContent = 'Движок ' + ((st.engine||{}).version || '?');
+
+      /* аккаунт в шапке + список в настройках */
+      var p = st.profiles || {profiles:[], active:''};
+      var sel = $('pSel');
+      sel.innerHTML='';
+      (p.profiles||[]).forEach(function(it){
+        var o=document.createElement('option');
+        o.value=it.id; o.textContent=it.name + (it.authorized?'':'  (не подключён)');
+        if(it.id===p.active) o.selected=true;
+        sel.appendChild(o);
+      });
+      renderProfiles(p);
+
+      /* аккаунт */
+      var s = st.status || {};
+      var user = s.user || {};
+      var fio = [user.last_name, user.first_name].filter(Boolean).join(' ')
+             || user.email || '';
+      $('aDot').className = 'dot' + (s.authorized ? '' : ' off');
+      $('pDot').className = 'dot' + (s.authorized ? '' : ' off');
+      $('aName').textContent = s.authorized ? (fio || 'Авторизован') : 'Не авторизован';
+      $('aSub').textContent = s.authorized
+        ? ('Резюме: ' + num((st.resumes||[]).length))
+        : (s.reason==='token_invalid' ? 'Токен больше не действует, нужен новый вход'
+                                      : 'Войдите через hh.ru, чтобы начать');
+      $('aLogin').classList.toggle('hide', !!s.authorized);
+      $('aLogout').classList.toggle('hide', !s.authorized);
+      $('setAcct').textContent = s.authorized
+        ? (fio + ' — резюме: ' + num((st.resumes||[]).length))
+        : 'Не авторизован';
+
+      /* кнопка запуска */
+      var L = st.letter || {};
+      var ready = s.authorized && L.ok && !running;
+      $('btnRun').disabled = !ready;
+      $('navBadge').classList.toggle('hide', !!L.ok);
+      if(!L.ok){
+        note($('runWarn'),'warn', L.message || 'Добавьте сопроводительное письмо');
+      } else if(!s.authorized){
+        note($('runWarn'),'warn','Сначала войдите в аккаунт hh.ru');
+      } else {
+        note($('runWarn'),'',null);
+      }
+      var rc = st.resume_choice || {};
+      var rcName = rc.missing ? 'выбранное резюме не найдено на hh.ru'
+                              : (rc.title || 'все резюме');
+      $('runHint').textContent = L.ok
+        ? ('Письмо готово: ' + num(L.variants) + ' вариантов. За прогон уйдёт не более '
+           + num((st.search||{}).max_responses || 200) + ' откликов.'
+           + '\nРезюме: ' + rcName + '.')
+        : '';
+
+      /* быстрые действия */
+      ['aBump','aClear','aPing'].forEach(function(id){ $(id).disabled = !s.authorized; });
+
+      /* отчёты */
+      renderReports(st.reports||[]);
+
+      /* движок */
+      var e = st.engine||{};
+      $('engInfo').textContent = 'hh-applicant-tool ' + (e.version||'?') +
+        (e.ok ? ' — совместим с приложением' : ' — НЕСОВМЕСТИМ: ' + (e.problems||[]).join('; ')) +
+        '\nПапка данных профиля: ' + (st.data_dir||'');
+      return st;
+    });
+  }
+
+  var RUN_STATUS = {ok:'завершён', cancelled:'прерван', error:'ошибка', running:'идёт'};
+
+  function repDate(s){
+    /* отчёт называется 2026-09-10 11-20-33 */
+    var m=/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2})[-:](\d{2})/.exec(String(s||''));
+    return m ? m[3]+'.'+m[2]+'.'+m[1]+' '+m[4]+':'+m[5] : (s||'—');
+  }
+
+  function renderReports(list){
+    var box=$('reports');
+    if(!list || !list.length){
+      box.innerHTML='<div class="muted">Пока ни одного прогона.</div>'; return;
+    }
+    box.innerHTML='';
+    list.slice(0,8).forEach(function(r){
+      var c = r.counts || r.counters || {};
+      var d=document.createElement('div'); d.className='rep';
+      d.innerHTML='<span class="d"></span><span class="n"></span>'
+                 +'<span class="muted" style="margin-left:12px"></span>'
+                 +'<span class="sp"></span><span class="tag"></span>';
+      d.children[0].textContent = repDate(r.date || r.started);
+      d.children[1].textContent = 'Откликов: ' + num(c.applied || 0);
+      var extra = [];
+      if(c.filtered) extra.push('отсеяно ' + num(c.filtered));
+      if(c.seen_before) extra.push('уже были ' + num(c.seen_before));
+      if(c.error) extra.push('ошибок ' + num(c.error));
+      d.children[2].textContent = extra.join(' · ');
+      d.children[4].textContent = RUN_STATUS[r.status] || r.status || '—';
+      if(r.status && r.status!=='ok') d.children[4].className='tag bad';
+      box.appendChild(d);
+    });
+  }
+
+  function switchProfile(id){
+    note($('actNote'),'info','Переключаю аккаунт, приложение перезапустится…');
+    $('actNote').classList.remove('hide');
+    note($('profNote'),'info','Переключаю аккаунт, приложение перезапустится…');
+    $('profNote').classList.remove('hide');
+    api().switch_profile(id);
+  }
+  $('pSel').onchange = function(){ switchProfile(this.value); };
+
+  /* ================================================== аккаунт */
+  window.onAuthEvent = function(event, message){
+    var box = $('aNote');
+    note(box, event==='done'?'ok':event==='error'?'err':'info', message);
+    box.classList.remove('hide');
+    if(event==='done'||event==='error') refresh();
+  };
+  window.updateProgress = function(){};
+
+  $('aLogin').onclick = $('setLogin').onclick = function(){
+    note($('aNote'),'info','Открываю окно входа hh.ru…');
+    $('aNote').classList.remove('hide');
+    api().start_login();
+  };
+  $('aLogout').onclick = $('setLogout').onclick = function(){
+    if(!confirm('Выйти из аккаунта hh.ru? Токен будет удалён.')) return;
+    api().logout().then(refresh);
+  };
+
+  /* ================================================== запуск */
+  function runApply(dry){
+    if(running) return;
+    running = true;
+    var b=$('btnRun');
+    b.disabled=true;
+    b.innerHTML='<span class="sp-loader"></span>'+(dry?'Холостой прогон…':'Идёт рассылка…');
+    note($('actNote'),'info', dry
+      ? 'Холостой прогон: смотрим, что отсеется. Отклики не отправляются.'
+      : 'Рассылка запущена. Прогресс — в отдельном окне.');
+    $('actNote').classList.remove('hide');
+    api().start_apply(!!dry).then(function(r){
+      running=false;
+      b.innerHTML='Запустить рассылку';
+      note($('actNote'), r&&r.status==='ok'?'ok':'err',
+        (r&&r.message) || (r&&r.status==='ok'?'Прогон завершён.':'Прогон не удался.'));
+      refresh();
+    });
+  }
+  $('btnRun').onclick = function(){ runApply(false); };
+  $('btnDry').onclick = function(){ runApply(true); show('home'); };
+
+  function quick(btn, label, call, confirmText, noteId){
+    btn.onclick = function(){
+      if(confirmText && !confirm(confirmText)) return;
+      var old = btn.innerHTML;
+      var box = $(noteId || 'actNote');
+      btn.disabled = true;
+      btn.innerHTML = '<b><span class="sp-loader"></span>'+label+'</b>';
+      call().then(function(r){
+        btn.disabled=false; btn.innerHTML=old;
+        note(box, r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Готово');
+        box.classList.remove('hide');
+      });
+    };
+  }
+  quick($('aBump'),'Поднимаю…', function(){ return api().bump_resumes(); });
+  quick($('aClear'),'Чищу…', function(){ return api().clear_rejections(); });
+  quick($('aPing'),'Рассылаю…', function(){ return api().send_pings(''); },
+    'Разослать напоминание во ВСЕ активные чаты с работодателями?\n\n' +
+    'Текст берётся из вкладки «Пинги». В каждый чат уходит свой вариант.\n' +
+    'Отменить рассылку нельзя.');
+
+  $('openReports').onclick = $('openReports2').onclick = function(){ api().open_reports_folder(); };
+  $('openData').onclick = function(){ api().open_data_folder(); };
+
+  /* ================================================== редактор писем */
+  var kind='letter', saved='', timer=null;
+
+  function highlight(text){
+    var out='', depth=0, i=0, badPos={}, stack=[];
+    for(i=0;i<text.length;i++){
+      if(text[i]==='{') stack.push(i);
+      else if(text[i]==='}'){ if(stack.length) stack.pop(); else badPos[i]=1; }
+    }
+    stack.forEach(function(p){ badPos[p]=1; });
+    i=0;
+    while(i<text.length){
+      var ch=text[i];
+      if(badPos[i]){ out+='<span class="bad">'+esc(ch)+'</span>'; i++; continue; }
+      if(ch==='{'){ out+='<span class="blk d'+(depth%3)+'">'+esc(ch); depth++; i++; continue; }
+      if(ch==='}'){ depth=Math.max(0,depth-1); out+=esc(ch)+'</span>'; i++; continue; }
+      if(ch==='%'){
+        var m=/^%\(\w+\)s/.exec(text.slice(i));
+        if(m){ out+='<span class="ph">'+esc(m[0])+'</span>'; i+=m[0].length; continue; }
+        if(text.slice(i,i+2)==='%%'){ out+='%%'; i+=2; continue; }
+        out+='<span class="bad">%</span>'; i++; continue;
+      }
+      out+=esc(ch); i++;
+    }
+    while(depth-->0) out+='</span>';
+    return out+'\n';
+  }
+  function paint(){ $('hl').innerHTML=highlight($('ed').value); $('hl').scrollTop=$('ed').scrollTop; }
+
+  function renderCheck(info){
+    var box=$('lStatus'); box.innerHTML='';
+    function add(cls,text){ var d=document.createElement('div'); note(d,cls,text); box.appendChild(d); }
+    (info.errors||[]).forEach(function(e){ add('err',e); });
+    (info.warnings||[]).forEach(function(w){ add('warn',w); });
+    if(info.ok && !(info.warnings||[]).length) add('ok','Шаблон в порядке.');
+    var n=info.variants||0;
+    $('cnt').firstChild.nodeValue = n>0 ? num(n) : '—';
+    $('cntNote').textContent = !$('ed').value.trim() ? 'Начните печатать'
+      : !info.ok ? 'Пока есть ошибка'
+      : n>=1000 ? 'С запасом' : n>=100 ? 'Хорошо'
+      : n>1 ? 'Добавьте блоков' : 'Все письма будут одинаковыми';
+    $('btnSave').disabled = !info.ok || $('ed').value===saved;
+  }
+
+  function checkNow(){
+    if(!api()) return;
+    api().letter_check($('ed').value, kind).then(function(info){
+      renderCheck(info);
+      if($('samples').children.length) showSamples(info.samples);
+    });
+  }
+  function onInput(){ paint(); clearTimeout(timer); timer=setTimeout(checkNow,280); }
+
+  function showSamples(list){
+    var box=$('samples'); box.innerHTML='';
+    (list||[]).forEach(function(s,i){
+      var d=document.createElement('div'); d.className='sample';
+      var t=document.createElement('i'); t.textContent='Вариант '+(i+1);
+      var p=document.createElement('span'); p.textContent=s;
+      d.appendChild(t); d.appendChild(p); box.appendChild(d);
+    });
+  }
+  $('btnSamples').onclick=function(){
+    if($('samples').children.length){ $('samples').innerHTML=''; return; }
+    api().letter_samples($('ed').value, kind, 3).then(showSamples);
+  };
+
+  function insert(text){
+    var ed=$('ed'), a=ed.selectionStart, b=ed.selectionEnd;
+    ed.value=ed.value.slice(0,a)+text+ed.value.slice(b);
+    ed.selectionStart=ed.selectionEnd=a+text.length;
+    ed.focus(); onInput();
+  }
+
+  function loadTemplate(next){
+    kind = next==='ping' ? 'ping' : 'letter';
+    $('tabLetter').className = kind==='letter'?'on':'';
+    $('tabPing').className = kind==='ping'?'on':'';
+    $('tipsLetter').style.display = kind==='letter'?'':'none';
+    $('samples').innerHTML='';
+    api().letter_state(kind).then(function(st){
+      saved = st.text || '';
+      $('ed').value = saved;
+      $('ed').placeholder = kind==='ping'
+        ? 'Короткое напоминание о себе. Вариантов нужно много: в один чат пинг уходит не раз.'
+        : 'Напишите письмо. Варианты слов берите в фигурные скобки: {Здравствуйте|Добрый день}';
+      var box=$('chips'); box.innerHTML='';
+      (st.placeholders||[]).forEach(function(name){
+        var b=document.createElement('button'); b.className='chip'; b.textContent=name;
+        b.onclick=function(){ insert('%('+name+')s'); };
+        box.appendChild(b);
+      });
+      paint(); checkNow();
+    });
+  }
+  $('tabLetter').onclick=function(){ loadTemplate('letter'); };
+  $('tabPing').onclick=function(){ loadTemplate('ping'); };
+  $('btnDefault').onclick=function(){
+    api().letter_default(kind).then(function(t){ $('ed').value=t; onInput(); });
+  };
+  $('btnReload').onclick=function(){ $('ed').value=saved; onInput(); };
+  $('btnSave').onclick=function(){
+    var text=$('ed').value;
+    $('btnSave').disabled=true;
+    api().letter_save(text, kind).then(function(r){
+      if(r.status==='ok'){
+        saved=text;
+        var box=$('lStatus'); box.innerHTML='';
+        var d=document.createElement('div');
+        note(d,'ok','Сохранено. Вариантов: '+num(r.variants||0));
+        box.appendChild(d);
+        refresh();
+      } else renderCheck(r);
+    });
+  };
+  $('ed').addEventListener('input', onInput);
+  $('ed').addEventListener('scroll', function(){ $('hl').scrollTop=this.scrollTop; });
+  $('ed').addEventListener('keydown', function(e){
+    if((e.ctrlKey||e.metaKey) && e.key==='s'){ e.preventDefault(); $('btnSave').click(); }
+  });
+
+  /* ================================================== настройки поиска */
+  function openSearch(){
+    var s = state.search || {};
+    $('fStop').value = s.stop_words || '';
+    $('fSalary').value = s.salary || '';
+    $('fExp').value = s.experience || '';
+    $('fPeriod').value = s.period || '';
+    $('fRemote').checked = !!s.remote;
+    $('fOrder').value = s.order_by || '';
+    $('fMax').value = s.max_responses || '';
+    $('fPages').value = s.total_pages || '';
+    $('fPer').value = s.per_page || '';
+    $('fOnlySalary').checked = !!s.only_with_salary;
+    $('fSkipTests').checked = s.skip_tests !== false;
+    if(!areasLoaded){
+      areasLoaded = true;
+      var sel=$('fArea');
+      sel.innerHTML='<option value="">Загружаю список регионов…</option>';
+      api().areas_list().then(function(list){
+        sel.innerHTML='<option value="">Любой регион</option>';
+        (list||[]).forEach(function(a){
+          var o=document.createElement('option'); o.value=a.id; o.textContent=a.name;
+          sel.appendChild(o);
+        });
+        sel.value = (state.search||{}).area || '';
+      });
+    } else {
+      $('fArea').value = s.area || '';
+    }
+    previewStop();
+  }
+
+  function previewStop(){
+    var raw=$('fStop').value.trim();
+    var box=$('stopPrev');
+    if(!raw){ box.className='note info hide'; return; }
+    api().stopwords_preview(raw).then(function(r){
+      if(!r || !r.words || !r.words.length){ box.className='note info hide'; return; }
+      box.className='note info';
+      box.innerHTML='<b>i</b><span></span>';
+      box.lastChild.textContent='Отсеются вакансии, в названии которых есть: '
+        + r.words.join(', ') + '. Например: ' + (r.examples||[]).join(' · ');
+    });
+  }
+  var stopTimer=null;
+  $('fStop').addEventListener('input', function(){
+    clearTimeout(stopTimer); stopTimer=setTimeout(previewStop, 400);
+  });
+
+  $('toggleMore').onclick=function(){
+    var box=$('moreBox'), open=box.classList.toggle('hide');
+    this.textContent = open ? 'Ещё настройки ▾' : 'Свернуть ▴';
+  };
+
+  function collectSearch(){
+    return {
+      stop_words: $('fStop').value,
+      salary: $('fSalary').value ? Number($('fSalary').value) : null,
+      area: $('fArea').value || null,
+      experience: $('fExp').value || null,
+      period: $('fPeriod').value ? Number($('fPeriod').value) : null,
+      remote: $('fRemote').checked,
+      order_by: $('fOrder').value || null,
+      max_responses: $('fMax').value ? Number($('fMax').value) : null,
+      total_pages: $('fPages').value ? Number($('fPages').value) : null,
+      per_page: $('fPer').value ? Number($('fPer').value) : null,
+      only_with_salary: $('fOnlySalary').checked,
+      skip_tests: $('fSkipTests').checked
+    };
+  }
+  $('btnSaveSearch').onclick=function(){
+    api().save_search(collectSearch()).then(function(r){
+      note($('searchNote'), r&&r.status==='ok'?'ok':'err',
+        (r&&r.message)||'Настройки сохранены.');
+      $('searchNote').classList.remove('hide');
+      refresh();
+    });
+  };
+
+  /* ================================================== отклики */
+  var STATES={active:'активен',invitation:'приглашение',response:'отклик',
+              discard:'отказ',discard_no_appropriate_vacancies:'отказ',
+              hidden:'скрыт'};
+  function stateClass(s){
+    if(!s) return 'other';
+    if(s.indexOf('invitation')===0) return 'invitation';
+    if(s.indexOf('discard')===0) return 'discard';
+    if(s==='active'||s==='response') return 'active';
+    return 'other';
+  }
+  function loadReplies(){
+    api().stats().then(function(st){
+      var k=$('kpis'); k.innerHTML='';
+      [['Всего откликов', st.total||0],
+       ['Приглашений', st.invitations||0],
+       ['Отказов', st.discards||0],
+       ['Отсеяно фильтром', st.skipped||0]].forEach(function(p){
+        var d=document.createElement('div'); d.className='kpi';
+        d.innerHTML='<b></b><small></small>';
+        d.children[0].textContent=num(p[1]); d.children[1].textContent=p[0];
+        k.appendChild(d);
+      });
+    });
+    api().negotiations().then(function(rows){
+      var b=$('repBody'); b.innerHTML='';
+      if(!rows || !rows.length){
+        note($('repNote'),'info','Пусто. Нажмите «Синхронизировать с hh.ru» — '
+          + 'приложение заберёт отклики вместе с названиями вакансий.');
+        $('repNote').classList.remove('hide');
+        return;
+      }
+      note($('repNote'),'',null);
+      rows.forEach(function(r){
+        var tr=document.createElement('tr');
+        var td=function(){ var e=document.createElement('td'); tr.appendChild(e); return e; };
+        td().textContent = fmtDate(r.created_at);
+        var v=td();
+        if(r.vacancy_url){
+          var a=document.createElement('a'); a.href='#';
+          a.textContent = r.vacancy_name || ('Вакансия ' + r.vacancy_id);
+          a.onclick=function(e){ e.preventDefault(); api().open_external(r.vacancy_url); };
+          v.appendChild(a);
+        } else v.textContent = r.vacancy_name || ('Вакансия ' + r.vacancy_id);
+        td().textContent = r.employer_name || '—';
+        var s=td();
+        var sp=document.createElement('span');
+        sp.className='st '+stateClass(r.state);
+        sp.textContent = STATES[r.state] || r.state || '—';
+        s.appendChild(sp);
+        b.appendChild(tr);
+      });
+    });
+  }
+  $('btnSync').onclick=function(){
+    var b=this; b.textContent='Синхронизирую…'; b.disabled=true;
+    api().sync_negotiations().then(function(r){
+      b.textContent='Синхронизировать с hh.ru'; b.disabled=false;
+      note($('repNote'), r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Готово');
+      $('repNote').classList.remove('hide');
+      loadReplies();
+    });
+  };
+
+  /* ================================================== настройки */
+  function fillSettings(){
+    var tg = state.telegram || {};
+    $('tgToken').value = tg.bot_token || '';
+    $('tgChat').value = tg.chat_id || '';
+  }
+  $('tgDetect').onclick=function(){
+    api().detect_chat_id($('tgToken').value).then(function(r){
+      if(r.status==='ok'){ $('tgChat').value=r.chat_id;
+        note($('tgNote'),'ok','Нашёл: '+(r.who||r.chat_id)); }
+      else note($('tgNote'),'err',r.message);
+      $('tgNote').classList.remove('hide');
+    });
+  };
+  $('tgCheck').onclick=function(){
+    note($('tgNote'),'info','Проверяю…'); $('tgNote').classList.remove('hide');
+    api().check_telegram($('tgToken').value, $('tgChat').value).then(function(r){
+      note($('tgNote'), r.status==='ok'?'ok':'err', r.message);
+    });
+  };
+  $('tgSave').onclick=function(){
+    api().save_telegram($('tgToken').value, $('tgChat').value).then(function(r){
+      note($('tgNote'), r.status==='ok'?'ok':'err', r.status==='ok'?'Сохранено.':r.message);
+      $('tgNote').classList.remove('hide'); refresh();
+    });
+  };
+  $('tgOff').onclick=function(){
+    api().skip_telegram().then(function(){
+      $('tgToken').value=''; $('tgChat').value='';
+      note($('tgNote'),'ok','Telegram отключён.'); $('tgNote').classList.remove('hide');
+      refresh();
+    });
+  };
+
+  /* ================================================== аккаунты */
+  function renderProfiles(p){
+    var box=$('profList');
+    if(!box) return;
+    var list=(p&&p.profiles)||[];
+    $('profCount').textContent = list.length ? (list.length + ' шт.') : '';
+    box.innerHTML='';
+    if(!list.length){
+      box.innerHTML='<div class="muted">Аккаунтов нет.</div>';
+      return;
+    }
+    list.forEach(function(it){
+      var row=document.createElement('div'); row.className='li';
+
+      var radio=document.createElement('input');
+      radio.type='radio'; radio.name='profPick'; radio.className='pick';
+      radio.checked = it.id===p.active;
+      radio.onchange=function(){ if(it.id!==p.active) switchProfile(it.id); };
+
+      var main=document.createElement('div'); main.className='main';
+      var ttl=document.createElement('div'); ttl.className='ttl';
+      ttl.textContent=it.name || it.id;
+      var tag=document.createElement('span');
+      tag.className='tag2 ' + (it.authorized?'ok':'off');
+      tag.textContent = it.authorized ? 'вход выполнен' : 'вход не выполнен';
+      ttl.appendChild(tag);
+      if(it.id===p.active){
+        var cur=document.createElement('span');
+        cur.className='tag2 on'; cur.textContent='текущий';
+        ttl.appendChild(cur);
+      }
+      var sub=document.createElement('div'); sub.className='sub';
+      sub.textContent = it.path || '';
+      main.appendChild(ttl); main.appendChild(sub);
+      main.onclick=function(){ if(it.id!==p.active) switchProfile(it.id); };
+
+      var acts=document.createElement('div'); acts.className='acts2';
+      if(it.id!==p.active){
+        var use=document.createElement('button');
+        use.className='btn sm'; use.textContent='Выбрать';
+        use.onclick=function(e){ e.stopPropagation(); switchProfile(it.id); };
+        acts.appendChild(use);
+      }
+      var del=document.createElement('button');
+      del.className='btn sm danger'; del.textContent='Удалить';
+      del.disabled = list.length<=1;
+      if(list.length<=1) del.title='Это единственный аккаунт — удалить нельзя';
+      del.onclick=function(e){ e.stopPropagation(); askDeleteProfile(it, list.length); };
+      acts.appendChild(del);
+
+      row.appendChild(radio); row.appendChild(main); row.appendChild(acts);
+      box.appendChild(row);
+    });
+  }
+
+  function askDeleteProfile(it, total){
+    if(total<=1){
+      note($('profNote'),'warn','Это единственный аккаунт — удалить его нельзя.');
+      $('profNote').classList.remove('hide');
+      return;
+    }
+    modal('Удалить аккаунт «'+(it.name||it.id)+'»?',
+      'Папка: ' + (it.path || '—') + '\n\n' +
+      'Убрать из списка — аккаунт пропадёт из приложения, файлы останутся на диске.\n' +
+      'Удалить вместе с файлами — сотрутся вход, база откликов, письма и отчёты.',
+      [{label:'Отмена'},
+       {label:'Убрать из списка', onClick:function(){ deleteProfile(it.id,false); }},
+       {label:'Удалить вместе с файлами', cls:'danger',
+        onClick:function(){ confirmPurgeProfile(it); }}]);
+  }
+
+  function confirmPurgeProfile(it){
+    modal('Точно стереть данные «'+(it.name||it.id)+'»?',
+      'Вход, база откликов, сопроводительные письма и отчёты будут удалены '+
+      'безвозвратно. Отменить это нельзя.',
+      [{label:'Отмена'},
+       {label:'Да, стереть', cls:'danger',
+        onClick:function(){ deleteProfile(it.id,true); }}]);
+  }
+
+  function deleteProfile(id, purge){
+    note($('profNote'),'info','Удаляю…'); $('profNote').classList.remove('hide');
+    api().delete_profile(id, !!purge).then(function(r){
+      note($('profNote'), r&&r.status==='ok'?'ok':'err', (r&&r.message)||'Готово');
+      $('profNote').classList.remove('hide');
+      if(r&&r.restarting) return;   /* удалили текущий — сейчас перезапустится */
+      refresh();
+    });
+  }
+
+  /* ================================================== резюме */
+  var RES_STATUS={published:'опубликовано', not_published:'не опубликовано',
+                  blocked:'заблокировано', correcting:'на правке'};
+
+  function resumeRow(it, selected){
+    var row=document.createElement('div'); row.className='li';
+    var id=it.id||'';
+
+    var radio=document.createElement('input');
+    radio.type='radio'; radio.name='resPick'; radio.className='pick';
+    radio.checked = id===(selected||'');
+    radio.onchange=function(){ pickResume(id); };
+
+    var main=document.createElement('div'); main.className='main';
+    var ttl=document.createElement('div'); ttl.className='ttl';
+    ttl.textContent = it.title || 'Без названия';
+    if(it.status){
+      var tag=document.createElement('span');
+      tag.className='tag2' + (it.status_id==='published' ? ' ok' : '');
+      tag.textContent = RES_STATUS[it.status_id] || it.status;
+      ttl.appendChild(tag);
+    }
+    var sub=document.createElement('div'); sub.className='sub';
+    if(it.sub){
+      sub.textContent=it.sub;
+    } else {
+      var bits=[];
+      if(it.updated_at) bits.push('обновлено ' + fmtDate(it.updated_at));
+      bits.push('просмотров ' + num(it.views||0)
+                + (it.new_views ? (' (+' + num(it.new_views) + ')') : ''));
+      if(it.invitations) bits.push('приглашений ' + num(it.invitations));
+      sub.textContent = bits.join(' · ');
+    }
+    main.appendChild(ttl); main.appendChild(sub);
+    main.onclick=function(){ radio.checked=true; pickResume(id); };
+
+    row.appendChild(radio); row.appendChild(main);
+
+    if(it.url){
+      var acts=document.createElement('div'); acts.className='acts2';
+      var open=document.createElement('button');
+      open.className='btn sm'; open.textContent='Открыть';
+      open.onclick=function(e){ e.stopPropagation(); api().open_external(it.url); };
+      acts.appendChild(open); row.appendChild(acts);
+    }
+    return row;
+  }
+
+  /* msg — что показать после перерисовки: иначе подтверждение выбора
+     затиралось бы тем же loadResumes, который его и перерисовывает. */
+  function loadResumes(force, msg, msgKind){
+    var box=$('resList');
+    box.innerHTML='<div class="muted">Загружаю список с hh.ru…</div>';
+    api().resumes_list(!!force).then(function(r){
+      r = r || {};
+      var list = r.items || [];
+      $('resCount').textContent = list.length ? (list.length + ' шт.') : '';
+      box.innerHTML='';
+      function say(kind, text){
+        note($('resNote'), kind, text);
+        if(text) $('resNote').classList.remove('hide');
+      }
+      if(!r.authorized){
+        say('warn','Сначала войдите в аккаунт hh.ru — вкладка «Настройки».');
+        box.innerHTML='<div class="muted">Нет данных.</div>';
+        return;
+      }
+      if(!list.length){
+        say('info','hh.ru не вернул ни одного резюме. '
+          + 'Если резюме есть — нажмите «Обновить список».');
+        box.innerHTML='<div class="muted">Пусто.</div>';
+        return;
+      }
+      box.appendChild(resumeRow(
+        {id:'', title:'Все резюме',
+         sub:'Ядро пройдёт по всем резюме по очереди — прежнее поведение.'},
+        r.selected));
+      list.forEach(function(it){ box.appendChild(resumeRow(it, r.selected)); });
+
+      if(msg) say(msgKind||'ok', msg);
+      else if(r.stale) say('warn','Выбранного резюме больше нет на hh.ru — '
+        + 'рассылка пойдёт по всем.');
+      else say('', null);
+    });
+  }
+
+  function pickResume(id){
+    api().select_resume(id||'').then(function(r){
+      var ok = r && r.status==='ok';
+      loadResumes(false, (r&&r.message) || (ok?'Сохранено':'Не получилось'),
+                  ok?'ok':'err');
+      refresh();
+    });
+  }
+  $('resReload').onclick=function(){ loadResumes(true); };
+  quick($('resBump'),'Поднимаю…', function(){ return api().bump_resumes(); }, null, 'resNote');
+
+  $('setProfAdd').onclick=function(){
+    var name=prompt('Название нового профиля (например, «Наташа»)');
+    if(!name) return;
+    api().add_profile(name).then(function(r){
+      if(r&&r.status==='error'){ note($('profNote'),'err',r.message);
+        $('profNote').classList.remove('hide'); return; }
+      note($('profNote'),'info','Профиль создан, переключаюсь…');
+      $('profNote').classList.remove('hide');
+    });
+  };
+  $('setProfImport').onclick=function(){
+    var src=prompt('Путь к папке профиля Telegram-бота\nнапример: C:\\HH_SCAM\\1_Anna_profile');
+    if(!src) return;
+    var name=prompt('Как назвать этот профиль?','Импорт');
+    if(!name) return;
+    note($('profNote'),'info','Копирую…'); $('profNote').classList.remove('hide');
+    api().import_profile(name, src).then(function(r){
+      if(!r||r.status==='error'){ note($('profNote'),'err',(r&&r.message)||'Не вышло'); return; }
+      note($('profNote'),'ok','Импортировано: '+(r.copied||[]).join(', ')+'. Переключаюсь…');
+    });
+  };
+
+  /* ================================================== старт */
+  function boot(){
+    if(!api()){ setTimeout(boot,200); return; }
+    try { api().ui_ready('app','v1'); } catch(e){}
+    refresh().then(function(){ show('home'); });
+    setInterval(function(){ if(!running) refresh(); }, 20000);
+  }
+  boot();
+})();
+</script>
+<script src="theme.js"></script>
+</body>
+</html>

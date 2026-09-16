@@ -1,0 +1,24 @@
+# Прямые зависимости приложения. Транзитивные (altgraph, cffi, pycparser,
+# idna, certifi и прочие) подтягивает pip сам — пинить их здесь незачем,
+# это только ломает установку на новых версиях Python.
+#
+# Внимание: ядро hh-applicant-tool требует Python >= 3.11.
+# Собирать exe нужно на 3.11+, иначе скачанное ядро не запустится.
+
+pyinstaller==6.22.2
+pyinstaller-hooks-contrib==2026.7
+
+pywebview==6.2.1
+bottle==0.13.4
+playwright==1.62.0
+requests==2.34.2
+PySocks==1.7.1
+pyTelegramBotAPI==4.14.0
+prettytable==3.18.0
+snowballstemmer==3.1.1
+pillow==12.3.0
+
+# Windows-специфика pywebview (EdgeChromium через .NET)
+pythonnet==3.1.0; sys_platform == 'win32'
+clr_loader==0.3.1; sys_platform == 'win32'
+pywin32-ctypes==0.2.3; sys_platform == 'win32'
