@@ -30,6 +30,14 @@
 4. При первом запуске откроется окно загрузчика: приложение скачает ядро, потом — Chromium. Это занимает пару минут и делается один раз.
 5. Пройдите авторизацию на hh.ru через встроенный браузер, напишите сопроводительное письмо, настройте фильтры и запускайте рассылку.
 
+### macOS
+
+1. Скачайте образ под свой процессор: **`HH-Agent-arm64.dmg`** — Apple Silicon (M1 и новее), **`HH-Agent-intel.dmg`** — маки на Intel. Узнать процессор: меню  → «Об этом Mac», строка «Чип» или «Процессор».
+2. Откройте `.dmg` и перетащите **HH-Agent** в «Программы».
+3. Первый запуск: приложение без платной подписи Apple, поэтому macOS скажет, что не может проверить разработчика. На macOS 15 и новее: **Системные настройки → Конфиденциальность и безопасность → внизу «HH-Agent» → «Всё равно открыть»**. На macOS 14 и старше достаточно правого клика по приложению → «Открыть».
+   Если macOS пишет, что приложение «повреждено», снимите с него карантин в Терминале: `xattr -dr com.apple.quarantine /Applications/HH-Agent.app`.
+4. Дальше — как на Windows: загрузчик скачает ядро и браузер, затем мастер настройки.
+
 ### Где лежат данные
 
 | Что | Где |
@@ -39,6 +47,16 @@
 | Браузер Chromium | `%LOCALAPPDATA%\ms-playwright` |
 
 Приложение портативное: чтобы перенести всё на другой компьютер, скопируйте `.exe` вместе с папкой `data`.
+
+На macOS всё лежит вне приложения — его можно обновлять заменой `HH-Agent.app`, профили не пропадут:
+
+| Что | Где |
+|---|---|
+| Профили, база, куки, отчёты, логи, `selftest.log` | `~/Library/Application Support/HH_Agent/data` (логи — уровнем выше) |
+| Консольное ядро | `~/Library/Application Support/HH_Agent/core` |
+| Браузер | `~/.cache/ms-playwright` |
+
+Селф-тест на маке: `/Applications/HH-Agent.app/Contents/MacOS/HH-Agent --selftest`.
 
 ## Диагностика
 
@@ -52,7 +70,7 @@ HH-Agent.exe --selftest
 
 ## Для разработчиков
 
-Требуется **Python 3.11+** (ядро `hh-applicant-tool` объявляет `Requires-Python >=3.11,<4.0`) и Windows для сборки `.exe`.
+Требуется **Python 3.11+** (ядро `hh-applicant-tool` объявляет `Requires-Python >=3.11,<4.0`). `.exe` собирается на Windows, `.app` — на macOS, причём под архитектуру того мака, где идёт сборка (arm64 на Apple Silicon, x86_64 на Intel).
 
 ```bash
 git clone https://github.com/ganjadrugdealer-prog/HH_Agent.git
@@ -82,6 +100,17 @@ build.bat          # или: python build.py
 ```
 
 Готовый файл — в папке `dist`.
+
+На macOS (системный `python3` там 3.9 — нужен отдельный 3.11+):
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python tools/ci_check.py
+sips -s format icns icon.png --out icon.icns
+.venv/bin/python build.py
+dist/HH-Agent.app/Contents/MacOS/HH-Agent --selftest
+```
 
 ### Как устроен проект
 
