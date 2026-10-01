@@ -297,10 +297,12 @@ def run(
     kind: str,
     options: dict[str, Any] | None = None,
     on_line: Callable[[str], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> tuple[str, int]:
     """Синхронно выполнить операцию движка и вернуть (вывод, код).
 
     Ловим и print, и логи: часть операций сообщает важное только через logger.
+    cancel — своё событие отмены, если вызывающему нужно знать, была ли она.
     """
     module_name = MODULES.get(kind)
     if not module_name:
@@ -309,18 +311,31 @@ def run(
     argv = build_argv(kind, options) if kind in OPTIONS else list(options or [])
     buf = io.StringIO()
 
+    def emit(line: str) -> None:
+        line = _ANSI.sub("", line).strip()
+        if line and on_line:
+            try:
+                on_line(line)
+            except Exception:
+                pass
+
     class _Sink(io.StringIO):
+        # print("📨 Отправили отклик", url) пишет в поток четырьмя вызовами:
+        # текст, пробел, ссылку и перевод строки. Наружу отдаём только
+        # целые строки, иначе ссылка отрывается от события.
+        pending = ""
+
         def write(self_inner, s: str) -> int:
             buf.write(s)
-            if on_line:
-                for line in s.splitlines():
-                    line = _ANSI.sub("", line).strip()
-                    if line:
-                        try:
-                            on_line(line)
-                        except Exception:
-                            pass
+            data = self_inner.pending + s
+            *lines, self_inner.pending = data.split("\n")
+            for line in lines:
+                emit(line)
             return len(s)
+
+        def flush_pending(self_inner) -> None:
+            rest, self_inner.pending = self_inner.pending, ""
+            emit(rest)
 
     class _Handler(logging.Handler):
         def emit(self_inner, record: logging.LogRecord) -> None:
@@ -339,7 +354,8 @@ def run(
     pkg_logger = logging.getLogger(ENGINE_PACKAGE)
 
     code = 0
-    cancel: threading.Event | None = None
+    registered = False
+    sink = _Sink()
     with _run_lock:
         pkg_logger.addHandler(handler)
         try:
@@ -352,12 +368,14 @@ def run(
                 args = parser.parse_args(argv, namespace=ns_cls())
             except SystemExit:
                 return ("Движок не принял параметры: " + " ".join(argv), 2)
-            cancel = threading.Event()
+            if cancel is None:
+                cancel = threading.Event()
             args._cancel_event = cancel
             op._cancel_event = cancel
             with _cancel_lock:
                 _cancel_events.add(cancel)
-            with redirect_stdout(_Sink()):
+            registered = True
+            with redirect_stdout(sink):
                 # Арность run() определяем заранее. Ловить TypeError здесь
                 # нельзя: ошибка из середины операции приводила к повторному
                 # запуску, то есть к повторной рассылке откликов.
@@ -370,7 +388,8 @@ def run(
             buf.write(f"\nОшибка: {exc}")
             logger.exception("операция %s", kind)
         finally:
-            if cancel is not None:
+            sink.flush_pending()
+            if registered:
                 with _cancel_lock:
                     _cancel_events.discard(cancel)
             pkg_logger.removeHandler(handler)

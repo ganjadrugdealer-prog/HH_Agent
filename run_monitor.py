@@ -2,8 +2,8 @@
 """Живая лента прогона и итоговый отчёт.
 
 Утилита сообщает о ходе рассылки обычными строками — часть через print,
-часть через logger. И то и другое сходится в одной точке: Api._send_progress.
-Мы её перехватываем, разбираем строку в структурное событие, дотягиваем из
+часть через logger. engine.run собирает и то и другое в целые строки и
+отдаёт в AppApi._send_progress. Там мы разбираем строку в событие, дотягиваем из
 базы название вакансии и зарплату и отдаём в отдельное окно «Прогон».
 """
 from __future__ import annotations
@@ -166,12 +166,15 @@ class RunMonitor:
             with self._lock:
                 self.resumes.append({"title": title, "applied": 0})
         elif kind == "resume_done":
-            m = re.search(r"Отправлено:\s*(\d+)", message)
-            title = message.split("резюме:", 1)[-1].split(".")[0].strip()
+            # Название резюме может содержать точки («Ст. редактор»),
+            # поэтому режем по хвосту «. Отправлено: N», а не по первой точке.
+            m = re.search(r"резюме:\s*(.*?)\.\s*Отправлено:\s*(\d+)", message)
+            title = m.group(1).strip() if m else \
+                message.split("резюме:", 1)[-1].strip().rstrip(".")
             with self._lock:
-                for r in self.resumes:
+                for r in reversed(self.resumes):   # последнее начатое
                     if r["title"] == title:
-                        r["applied"] = int(m.group(1)) if m else r["applied"]
+                        r["applied"] = int(m.group(2)) if m else r["applied"]
                         break
         elif kind == "limit":
             with self._lock:

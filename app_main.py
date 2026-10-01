@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "HH Agent"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 
 def _pin_browsers_path() -> None:

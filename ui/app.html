@@ -725,8 +725,10 @@
     api().start_apply(!!dry).then(function(r){
       running=false;
       b.innerHTML='Запустить рассылку';
-      note($('actNote'), r&&r.status==='ok'?'ok':'err',
-        (r&&r.message) || (r&&r.status==='ok'?'Прогон завершён.':'Прогон не удался.'));
+      var st = (r&&r.status) || 'error';
+      note($('actNote'), st==='ok'?'ok':st==='cancelled'?'warn':'err',
+        (r&&r.message) || (st==='ok'?'Прогон завершён.'
+          :st==='cancelled'?'Прогон остановлен.':'Прогон не удался.'));
       refresh();
     });
   }

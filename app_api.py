@@ -177,13 +177,24 @@ class AppApi(Api):
         except Exception:
             logger.exception("monitor.feed")
 
+    # Один прогон на процесс. Проверка и захват — одним шагом: окно и
+    # Telegram-бот могут нажать «Запустить» одновременно, и второй запуск
+    # раньше успевал сбросить ленту идущего прогона и закрыть его отчёт.
+    _apply_lock = threading.Lock()
+
     def apply_vacancies(self, params: dict[str, Any]) -> dict[str, Any]:
-        params = dict(params or {})
+        busy = {"status": "error",
+                "message": "Сейчас выполняется другая операция движка."}
+        if not self._apply_lock.acquire(blocking=False):
+            return busy
+        try:
+            if engine.is_running() or self._is_running:
+                return busy
+            return self._apply_locked(dict(params or {}))
+        finally:
+            self._apply_lock.release()
 
-        if engine.is_running():
-            return {"status": "error",
-                    "message": "Сейчас выполняется другая операция движка."}
-
+    def _apply_locked(self, params: dict[str, Any]) -> dict[str, Any]:
         # Без сопроводительного письма рассылку не запускаем: иначе движок
         # подставит свою заглушку из apply_vacancies.py, и работодатели
         # получат безликий текст «Прошу рассмотреть мою кандидатуру».
@@ -214,18 +225,48 @@ class AppApi(Api):
 
         params = engine.apply_params(params)
 
+        cancel = threading.Event()
+        self._cancel_event = cancel
+        self._is_running = True
         try:
-            self.monitor.open_window(self, params)
-        except Exception:
-            logger.exception("не смог открыть окно прогона")
+            try:
+                self.monitor.open_window(self, params)
+            except Exception:
+                logger.exception("не смог открыть окно прогона")
 
-        result = super().apply_vacancies(params)
+            # Штатный Api.apply_vacancies не годится: его перехват stdout
+            # отдаёт print по кускам, и ссылка на вакансию отрывалась от
+            # события «Отправили отклик». engine.run склеивает целые строки.
+            sent = 0
 
-        try:
-            self.monitor.finish(result.get("status", "ok"))
-        except Exception:
-            logger.exception("monitor.finish")
-        return result
+            def on_line(line: str) -> None:
+                nonlocal sent
+                sent += 1
+                self._send_progress(sent, 0, line)
+
+            text, code = engine.run(self._tool, "apply", params,
+                                    on_line=on_line, cancel=cancel)
+            if code == 0:
+                result = {"status": "cancelled" if cancel.is_set() else "ok"}
+            else:
+                tail = text.strip().splitlines()[-1:] or ["нет подробностей"]
+                result = {"status": "error",
+                          "message": "Ошибка выполнения операции: " + tail[0][:300]}
+
+            try:
+                self.monitor.finish(result["status"])
+            except Exception:
+                logger.exception("monitor.finish")
+            return result
+        finally:
+            self._cancel_event = None
+            self._is_running = False
+
+    def cancel_apply(self) -> None:
+        event = self._cancel_event
+        if event is not None:
+            event.set()
+        engine.cancel_run()
 
     # ============================================ сопроводительное и пинги
 
@@ -546,8 +587,12 @@ class AppApi(Api):
 
     def save_search(self, params: dict[str, Any]) -> dict[str, Any]:
         try:
-            clean = {k: v for k, v in (params or {}).items()
-                     if k in self.SEARCH_DEFAULTS}
+            # Сливаем с сохранённым: экран «Поиск» не знает про resume_id,
+            # а config.save заменяет ключ целиком — выбор резюме слетал.
+            saved = self._tool.config.get(self.SEARCH_KEY) or {}
+            clean = {k: v for k, v in saved.items() if k in self.SEARCH_DEFAULTS}
+            clean.update({k: v for k, v in (params or {}).items()
+                          if k in self.SEARCH_DEFAULTS})
             self._tool.config.save(**{self.SEARCH_KEY: clean})
             return {"status": "ok", "message": "Настройки сохранены."}
         except Exception as exc:

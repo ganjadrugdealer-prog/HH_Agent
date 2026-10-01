@@ -100,20 +100,30 @@ def patch_dry_run_blacklist() -> None:
     original_run = av.Operation.run
 
     def run_with_dry_guard(self, tool, args):
-        if getattr(args, "dry_run", False):
-            client = tool.api_client
-            if not getattr(client, "_hh_patch_dry", False):
-                real_put = client.put
+        if not getattr(args, "dry_run", False):
+            return original_run(self, tool, args)
+        # Клиент API у движка один на весь процесс (cached_property), поэтому
+        # подмену put снимаем после прогона. Раньше она оставалась навсегда,
+        # и после первого холостого прогона боевые тоже не трогали ЧС.
+        client = tool.api_client
+        own = client.__dict__
+        had_own, prev = "put" in own, own.get("put")
+        real_put = client.put
 
-                def guarded_put(endpoint, *a, **kw):
-                    if "blacklisted" in str(endpoint):
-                        logger.info("dry-run: пропускаю чёрный список %s", endpoint)
-                        return {}
-                    return real_put(endpoint, *a, **kw)
+        def guarded_put(endpoint, *a, **kw):
+            if "blacklisted" in str(endpoint):
+                logger.info("dry-run: пропускаю чёрный список %s", endpoint)
+                return {}
+            return real_put(endpoint, *a, **kw)
 
-                client.put = guarded_put
-                client._hh_patch_dry = True
-        return original_run(self, tool, args)
+        client.put = guarded_put
+        try:
+            return original_run(self, tool, args)
+        finally:
+            if had_own:
+                client.put = prev
+            else:
+                own.pop("put", None)
 
     av.Operation.run = run_with_dry_guard
     av.Operation._hh_dry_patched = True

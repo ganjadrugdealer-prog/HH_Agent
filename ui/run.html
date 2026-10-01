@@ -136,6 +136,10 @@ const IMPORTANT = new Set(['applied','applied_test','applied_captcha','filtered'
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+// Ссылка попадает в JS-строку внутри атрибута onclick: апостроф в ней
+// закрыл бы строку. JSON.stringify даёт корректный литерал, esc — атрибут.
+function urlCall(u){ return 'openUrl(' + esc(JSON.stringify(String(u))) + ')'; }
+
 function cls(kind){ return kind.startsWith('applied') ? 'applied' : kind; }
 
 function evHtml(e){
@@ -145,7 +149,7 @@ function evHtml(e){
   if (e.area) bits.push(esc(e.area));
   if (e.remote) bits.push('удалённо');
   if (e.title) bits.push(esc(e.text.replace(/https?:\/\/\S+/, '').trim()));
-  const link = e.url ? ' · <a onclick="openUrl(\'' + esc(e.url) + '\')">открыть</a>' : '';
+  const link = e.url ? ' · <a onclick="' + urlCall(e.url) + '">открыть</a>' : '';
   return '<div class="ev ' + cls(e.kind) + '">' +
     '<div class="ic">' + (IC[e.kind] || '·') + '</div>' +
     '<div class="body"><div class="ttl">' + title + '</div>' +
@@ -247,7 +251,7 @@ function renderReport(rep){
     html += '<div class="rep"><h2>Куда откликнулись (' + sent.length + ')</h2><table>' +
       '<tr><th>Вакансия</th><th>Зарплата</th><th>Город</th></tr>' +
       sent.slice(0, 60).map(e => '<tr><td>' +
-        (e.url ? '<a onclick="openUrl(\'' + esc(e.url) + '\')">' + esc(e.title || e.url) + '</a>'
+        (e.url ? '<a onclick="' + urlCall(e.url) + '">' + esc(e.title || e.url) + '</a>'
                : esc(e.title || '—')) +
         '</td><td>' + esc(e.salary || '—') + '</td><td>' + esc(e.area || '—') + '</td></tr>'
       ).join('') + '</table>' +

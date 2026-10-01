@@ -1049,6 +1049,198 @@ def t_app_api_set_window_prepares_templates():
     assert "set_memory_path" in src, "set_window не задаёт память пингов"
 
 
+def t_engine_run_joins_print_fragments():
+    """print(a, b) пишет кусками — в ленту должна попасть целая строка."""
+    import engine
+    from importlib import import_module
+    mod = import_module("hh_applicant_tool.operations.clear_negotiations")
+    orig = mod.Operation.run
+
+    def fake(self, tool, args=None):
+        print("❌ Отменили отклик на вакансию:", "https://hh.ru/vacancy/7", "Ред")
+        print("хвост без перевода строки", end="")
+
+    mod.Operation.run = fake
+    lines = []
+    try:
+        text, code = engine.run(object(), "clear", {}, on_line=lines.append)
+    finally:
+        mod.Operation.run = orig
+    assert code == 0, text
+    assert lines == ["❌ Отменили отклик на вакансию: https://hh.ru/vacancy/7 Ред",
+                     "хвост без перевода строки"], lines
+
+
+def t_monitor_resume_title_with_dot():
+    from run_monitor import RunMonitor
+    with tempfile.TemporaryDirectory() as d:
+        m = RunMonitor(_FakeTool(Path(d)), Path(d))
+        m.feed("🚀 Начинаю рассылку откликов для резюме: Ст. редактор")
+        m.feed("✅️ Закончили рассылку для резюме: Ст. редактор. Отправлено: 5")
+        assert m.snapshot()["resumes"] == [{"title": "Ст. редактор", "applied": 5}]
+
+
+class _PutClient:
+    def __init__(self):
+        self.puts = []
+
+    def put(self, endpoint, *a, **kw):
+        self.puts.append(endpoint)
+        return {}
+
+
+def t_hh_patch_dry_run_guard_restored():
+    """Холостой прогон не трогает ЧС, а следующий боевой — снова трогает."""
+    import hh_patch
+    from hh_applicant_tool.operations import apply_vacancies as av
+    saved_run = av.Operation.run
+    saved_flag = getattr(av.Operation, "_hh_dry_patched", False)
+    av.Operation.run = lambda self, tool, args: tool.api_client.put(
+        "/vacancies/blacklisted/1")
+    av.Operation._hh_dry_patched = False
+    try:
+        hh_patch.patch_dry_run_blacklist()
+        tool = type("T", (), {})()
+        tool.api_client = _PutClient()
+        args = type("A", (), {})()
+        op = av.Operation.__new__(av.Operation)
+        args.dry_run = True
+        av.Operation.run(op, tool, args)
+        assert tool.api_client.puts == [], "dry-run положил вакансию в ЧС"
+        assert "put" not in tool.api_client.__dict__, "подмена put осталась"
+        args.dry_run = False
+        av.Operation.run(op, tool, args)
+        assert tool.api_client.puts == ["/vacancies/blacklisted/1"], \
+            "после dry-run боевой прогон не кладёт в ЧС"
+    finally:
+        av.Operation.run = saved_run
+        av.Operation._hh_dry_patched = saved_flag
+
+
+def _apply_api(root: Path):
+    """AppApi без окна и сети, с письмом и вакансией 1 в базе."""
+    import app_api
+    from run_monitor import RunMonitor
+    tool = _FakeTool(root)
+    api = app_api.AppApi.__new__(app_api.AppApi)
+    api._tool = tool
+    api._window = None
+    api._cancel_event = None
+    api._is_running = False
+    api.monitor = RunMonitor(tool, root)
+    api.monitor.open_window = lambda a, p: api.monitor.reset()
+    (root / "letter.txt").write_text("{Здравствуйте|Добрый день}, %(first_name)s",
+                                     encoding="utf-8")
+    return api
+
+
+def _with_apply_run(fn, body):
+    from hh_applicant_tool.operations import apply_vacancies as av
+    orig = av.Operation.run
+    av.Operation.run = fn
+    try:
+        return body()
+    finally:
+        av.Operation.run = orig
+
+
+def t_app_api_apply_feed_full_lines():
+    """Отклик в ленте — со ссылкой и названием, резюме — с названием и счётом."""
+    def fake(self, tool, args):
+        print("🚀 Начинаю рассылку откликов для резюме:", "Ст. редактор")
+        print("📨 Отправили отклик на вакансию", "https://hh.ru/vacancy/1")
+        print("✅️ Закончили рассылку для резюме: Ст. редактор. Отправлено: 1")
+
+    with tempfile.TemporaryDirectory() as d:
+        api = _apply_api(Path(d))
+        res = _with_apply_run(fake, lambda: api.start_apply())
+        assert res == {"status": "ok"}, res
+        snap = api.monitor.snapshot()
+        ev = [e for e in snap["events"] if e["kind"] == "applied"]
+        assert len(ev) == 1, snap["events"]
+        assert ev[0]["url"] == "https://hh.ru/vacancy/1", ev[0]
+        assert ev[0].get("title") == "Тест", ev[0]
+        assert snap["resumes"] == [{"title": "Ст. редактор", "applied": 1}], snap
+        assert snap["status"] == "ok"
+
+
+def t_app_api_apply_second_run_rejected():
+    """Второй запуск во время прогона не сбрасывает его ленту и отчёт."""
+    import threading
+    started, release = threading.Event(), threading.Event()
+
+    def slow(self, tool, args):
+        print("📨 Отправили отклик на вакансию https://hh.ru/vacancy/1")
+        started.set()
+        release.wait(5)
+
+    with tempfile.TemporaryDirectory() as d:
+        api = _apply_api(Path(d))
+
+        def body():
+            th = threading.Thread(target=api.start_apply)
+            th.start()
+            assert started.wait(5)
+            try:
+                second = api.start_apply()
+                snap = api.monitor.snapshot()
+            finally:
+                release.set()
+                th.join()
+            return second, snap
+
+        second, snap = _with_apply_run(slow, body)
+        assert second["status"] == "error", second
+        assert snap["status"] == "running", snap["status"]
+        assert len(snap["events"]) == 1, snap["events"]
+        assert len(api.monitor.list_reports()) == 1
+
+
+def t_app_api_apply_cancel():
+    """Кнопка «Стоп» останавливает рассылку, статус — cancelled."""
+    import threading
+    import time
+    started = threading.Event()
+
+    def slow(self, tool, args):
+        started.set()
+        for _ in range(100):
+            if self._cancel_event.is_set():
+                return
+            time.sleep(0.02)
+
+    with tempfile.TemporaryDirectory() as d:
+        api = _apply_api(Path(d))
+        out = {}
+
+        def body():
+            th = threading.Thread(target=lambda: out.update(api.start_apply()))
+            th.start()
+            assert started.wait(5)
+            api.cancel_apply()
+            th.join()
+
+        _with_apply_run(slow, body)
+        assert out == {"status": "cancelled"}, out
+        assert api._cancel_event is None and api._is_running is False
+
+
+def t_app_api_save_search_keeps_resume():
+    """Экран «Поиск» шлёт настройки без resume_id — выбор резюме не теряется."""
+    import app_api
+    from hh_applicant_tool.utils.config import Config
+    with tempfile.TemporaryDirectory() as d:
+        api = _api_with_resumes(Path(d))
+        api._tool.config = Config(Path(d) / "config.json")   # настоящий save()
+        app_api.AppApi.select_resume(api, "aaa")
+        api.save_search({"stop_words": "продажи", "remote": True})
+        s = api.search_settings()
+        assert s["resume_id"] == "aaa", s
+        assert s["stop_words"] == "продажи" and s["remote"] is True, s
+        app_api.AppApi.select_resume(api, "")
+        assert api.search_settings()["resume_id"] is None
+
+
 def main():
     tests = [(k, v) for k, v in sorted(globals().items())
              if k.startswith("t_") and callable(v)]
