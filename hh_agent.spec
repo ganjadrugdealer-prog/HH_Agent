@@ -127,20 +127,13 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
-    [],
+common = dict(
     name="HH-Agent",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     console=False,
-    icon='icon.ico' if sys.platform == 'win32' else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -149,13 +142,38 @@ exe = EXE(
 )
 
 if sys.platform == 'darwin':
+    # На macOS — onedir внутри .app. Onefile в бандле PyInstaller объявил
+    # устаревшим (в 7.0 это ошибка): он при каждом запуске распаковывает
+    # всё во временную папку, медленнее стартует и хуже уживается с
+    # Gatekeeper и подписью.
+    import re
+    version = re.search(r'APP_VERSION = "([^"]+)"',
+                        open("app_main.py", encoding="utf-8").read()).group(1)
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, **common)
+    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False,
+                   name="HH-Agent")
     app = BUNDLE(
-        exe,
+        coll,
         name='HH-Agent.app',
         icon='icon.icns',
         bundle_identifier='com.hhagent.app',
+        version=version,
         info_plist={
-            'NSHighResolutionCapable': 'True',
-            'LSBackgroundOnly': 'False',
-        }
+            'CFBundleName': 'HH Agent',
+            'CFBundleDisplayName': 'HH Agent',
+            'CFBundleShortVersionString': version,
+            'NSHighResolutionCapable': True,
+            'LSBackgroundOnly': False,
+        },
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        runtime_tmpdir=None,
+        icon='icon.ico' if sys.platform == 'win32' else None,
+        **common,
     )

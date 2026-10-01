@@ -56,11 +56,18 @@ def chromium_executable() -> str | None:
 
 
 # Раскладка playwright различается по платформам; имя исполняемого файла тоже.
+# С переходом на Chrome for Testing (playwright 1.5x+) на macOS браузер лежит
+# в chrome-mac-x64 / chrome-mac-arm64 и называется «Google Chrome for
+# Testing», а не Chromium. Старые раскладки оставлены для прежних сборок.
+_CFT_MAC = ("Google Chrome for Testing.app", "Contents", "MacOS",
+            "Google Chrome for Testing")
+_OLD_MAC = ("Chromium.app", "Contents", "MacOS", "Chromium")
 CHROMIUM_LAYOUT = {
-    "win32": ("chrome.exe", (("chrome-win64",), ("chrome-win",))),
-    "darwin": ("Chromium", (("chrome-mac", "Chromium.app", "Contents", "MacOS"),
-                            ("chrome-mac-arm64", "Chromium.app", "Contents", "MacOS"))),
-    "linux": ("chrome", (("chrome-linux",),)),
+    "win32": (("chrome-win64", "chrome.exe"), ("chrome-win", "chrome.exe")),
+    "darwin": (("chrome-mac-arm64",) + _CFT_MAC, ("chrome-mac-x64",) + _CFT_MAC,
+               ("chrome-mac",) + _CFT_MAC,
+               ("chrome-mac-arm64",) + _OLD_MAC, ("chrome-mac",) + _OLD_MAC),
+    "linux": (("chrome-linux64", "chrome"), ("chrome-linux", "chrome")),
 }
 
 
@@ -77,18 +84,37 @@ def chromium_installed() -> bool:
     d = browsers_dir()
     if not d.exists():
         return False
-    name, fast_paths = CHROMIUM_LAYOUT.get(sys.platform, CHROMIUM_LAYOUT["linux"])
+    layouts = CHROMIUM_LAYOUT.get(sys.platform, CHROMIUM_LAYOUT["linux"])
+    names = {rel[-1] for rel in layouts}
+    # chromium_headless_shell-* под маску не попадает, и правильно:
+    # окно входа должно быть видимым
     for item in d.glob("chromium-*"):
-        for rel in fast_paths:
-            if (item.joinpath(*rel) / name).exists():
+        for rel in layouts:
+            if item.joinpath(*rel).is_file():
                 return True
         # нештатная раскладка — ищем перебором, это редкий путь
         try:
-            if any(item.rglob(name)):
+            if any(p.is_file() for n in names for p in item.rglob(n)):
                 return True
         except OSError:
             continue
     return False
+
+
+_PW_BAR = re.compile(r"\|[^|]*\|\s*(\d+)%\s+of\s+([\d.,]+\s*\S+)")
+
+
+def browser_progress_line(line: str) -> str:
+    """Строка прогресса playwright → короткий текст для мастера.
+
+    Без терминала playwright печатает полосу «|■■■…■|  45% of 187.7 MiB»
+    одним словом без пробелов: в окне мастера она не переносится и
+    вылезает за карточку.
+    """
+    m = _PW_BAR.search(line)
+    if m:
+        return f"Скачиваю: {m.group(1)}% из {m.group(2)}"
+    return line[:200]
 
 
 class AppApi(Api):
@@ -436,7 +462,8 @@ class AppApi(Api):
                 for line in proc.stdout:
                     line = line.strip()
                     if line:
-                        self._emit("onInstall", "progress", line[:200])
+                        self._emit("onInstall", "progress",
+                                   browser_progress_line(line))
                 proc.wait()
                 if chromium_installed():
                     event, message = "done", "Браузер установлен"

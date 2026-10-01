@@ -16,6 +16,8 @@ venv.bak/
 # Build
 build/
 dist/
+# иконку macOS собирает sips из icon.png
+icon.icns
 *.egg-info/
 *.egg
 # hh_agent.spec — часть репозитория, его игнорировать нельзя.

@@ -7,7 +7,7 @@
   :root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--soft:#f1f3f6;--ink:#131722;
     --dim:#667085;--faint:#98a2b3;--accent:#2563eb;--accent2:#1d4fd7;
     --ok:#12854a;--okbg:#e8f6ee;--err:#b42318;--errbg:#fdeceb;
-    --warn:#8a5a00;--warnbg:#fff6e6;--b1:#e8f0ff}
+    --warn:#8a5a00;--warnbg:#fff6e6;--b1:#e8f0ff;--info:#1e40af}
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -47,12 +47,12 @@
   label.f{display:block;font-size:12px;font-weight:600;color:var(--dim);margin:0 0 5px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:11px}
   .note{font-size:13px;padding:9px 12px;border-radius:9px;margin-top:10px;
-    white-space:pre-wrap;display:none}
+    white-space:pre-wrap;overflow-wrap:anywhere;display:none}
   .note.show{display:block}
   .note.ok{background:var(--okbg);color:var(--ok)}
   .note.err{background:var(--errbg);color:var(--err)}
   .note.warn{background:var(--warnbg);color:var(--warn)}
-  .note.info{background:var(--b1);color:#1e40af}
+  .note.info{background:var(--b1);color:var(--info)}
   .sp-l{display:inline-block;width:12px;height:12px;border:2px solid #cbd5e1;
     border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
     vertical-align:-1px;margin-right:7px}

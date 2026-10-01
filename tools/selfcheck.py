@@ -873,17 +873,32 @@ def t_chromium_detect_cross_platform():
         "darwin": "chromium-1234/chrome-mac/Chromium.app/Contents/MacOS/Chromium",
         "linux":  "chromium-1234/chrome-linux/chrome",
     }
+    # Chrome for Testing — раскладка playwright 1.5x+, сверена с 1.62
+    cft = "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+    cases = list(layouts.items()) + [
+        ("darwin", "chromium-1234/chrome-mac-x64/" + cft),
+        ("darwin", "chromium-1234/chrome-mac-arm64/" + cft),
+        ("linux", "chromium-1234/chrome-linux64/chrome"),
+    ]
     real_platform = sys.platform
     real_env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
     try:
-        for plat, rel in layouts.items():
+        for plat, rel in cases:
             with tempfile.TemporaryDirectory() as d:
                 exe = Path(d) / rel
                 exe.parent.mkdir(parents=True)
                 exe.write_text("x")
                 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = d
                 sys.platform = plat
-                assert app_api.chromium_installed(), f"{plat}: браузер не найден"
+                assert app_api.chromium_installed(), f"{plat}: браузер не найден: {rel}"
+        with tempfile.TemporaryDirectory() as d:
+            # только headless shell — для окна входа он не годится
+            exe = Path(d) / "chromium_headless_shell-1234/chrome-mac-x64/chrome-headless-shell"
+            exe.parent.mkdir(parents=True)
+            exe.write_text("x")
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = d
+            sys.platform = "darwin"
+            assert not app_api.chromium_installed(), "headless shell выдан за браузер"
         with tempfile.TemporaryDirectory() as d:
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = d
             sys.platform = real_platform
@@ -910,6 +925,7 @@ def t_release_workflow_both_mac_archs():
     wf = (BUILD / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "macos-15-intel" in wf, "нет сборки под Intel-мак"
     assert "lipo -archs" in wf, "нет проверки архитектуры бинарника"
+    assert '"$app" --selftest' in wf, "собранный .app не запускается в CI"
     release = wf[wf.find("  release:"):]
     for name in ("HH-Agent.exe", "HH-Agent-arm64.dmg", "HH-Agent-intel.dmg"):
         assert name in release, f"{name} не публикуется в релиз"
@@ -1239,6 +1255,63 @@ def t_app_api_save_search_keeps_resume():
         assert s["stop_words"] == "продажи" and s["remote"] is True, s
         app_api.AppApi.select_resume(api, "")
         assert api.search_settings()["resume_id"] is None
+
+
+def t_browser_progress_line():
+    """Полоса прогресса playwright не должна попадать в мастер как есть."""
+    import app_api
+    bar = "|" + "\u25A0" * 80 + "| 100% of 187.7 MiB"
+    assert app_api.browser_progress_line(bar) == "Скачиваю: 100% из 187.7 MiB"
+    half = "|" + "\u25A0" * 40 + " " * 40 + "|  50% of 187.7 MiB"
+    assert app_api.browser_progress_line(half) == "Скачиваю: 50% из 187.7 MiB"
+    plain = "Chrome for Testing 145.0 downloaded to /x"
+    assert app_api.browser_progress_line(plain) == plain
+
+
+def t_restart_resets_pyinstaller_env():
+    """Новый экземпляр не должен наследовать _MEIPASS закрывающегося."""
+    import inspect
+    import app_main
+    assert app_main.restart_env().get("PYINSTALLER_RESET_ENVIRONMENT") == "1"
+    assert "restart_env()" in inspect.getsource(app_main.restart_app)
+
+
+def t_mac_data_outside_bundle():
+    """В собранном .app данные живут в Application Support, не в бандле."""
+    import app_main
+    real_platform, real_frozen = sys.platform, getattr(sys, "frozen", None)
+    real_exe, real_home = sys.executable, os.environ.get("HOME")
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["HOME"] = d
+            sys.platform = "darwin"
+            sys.frozen = True
+            sys.executable = str(Path(d) / "HH-Agent.app/Contents/MacOS/HH-Agent")
+            root = app_main.data_root()
+            assert "HH-Agent.app" not in str(root), f"данные в бандле: {root}"
+            assert root == Path(d) / "Library/Application Support/HH_Agent/data", root
+            # Windows/исходники — по-прежнему портативно, рядом с exe
+            sys.platform = "win32"
+            sys.executable = str(Path(d) / "win" / "HH-Agent.exe")
+            assert app_main.home_dir() == (Path(d) / "win").resolve(), app_main.home_dir()
+    finally:
+        sys.platform, sys.executable = real_platform, real_exe
+        if real_frozen is None:
+            del sys.frozen
+        else:
+            sys.frozen = real_frozen
+        if real_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = real_home
+
+
+def t_mac_spec_onedir():
+    """На macOS собираем onedir-бандл: onefile в .app устарел в PyInstaller."""
+    spec = (BUILD / "hh_agent.spec").read_text(encoding="utf-8")
+    mac = spec[spec.find("if sys.platform == 'darwin':\n    # На macOS"):]
+    assert "exclude_binaries=True" in mac and "COLLECT(" in mac, "mac-сборка не onedir"
+    assert "BUNDLE(\n        coll" in mac, "BUNDLE собирается не из COLLECT"
 
 
 def main():

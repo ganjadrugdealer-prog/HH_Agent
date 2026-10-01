@@ -70,6 +70,21 @@ jobs:
             *) echo "::error::expected ${{ matrix.arch }}, got: $archs"; exit 1 ;;
           esac
 
+      # Запускаем именно собранный .app на раннере его архитектуры: так
+      # arm64-сборка проверяется на живом Apple Silicon, а не только lipo.
+      # Ядро ставим тем же core_manager, что и загрузчик, — в тот же
+      # ~/Library/Application Support/HH_Agent, где его ищет приложение.
+      - name: Smoke test built app (macOS only)
+        if: runner.os == 'macOS'
+        run: |
+          app=dist/HH-Agent.app/Contents/MacOS/HH-Agent
+          python -c "import core_manager; print(core_manager.install_core(print))"
+          "$app" --install-browser
+          "$app" --selftest
+          if [ -e dist/HH-Agent.app/Contents/MacOS/data ] || [ -e dist/HH-Agent.app/Contents/MacOS/selftest.log ]; then
+            echo "::error::приложение пишет данные внутрь .app"; exit 1
+          fi
+
       - name: Package macOS App into DMG (macOS only)
         if: runner.os == 'macOS'
         run: |

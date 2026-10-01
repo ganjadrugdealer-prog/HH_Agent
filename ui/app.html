@@ -10,7 +10,7 @@
     --accent:#2563eb; --accent2:#1d4fd7;
     --ok:#12854a; --okbg:#e8f6ee; --err:#b42318; --errbg:#fdeceb;
     --warn:#8a5a00; --warnbg:#fff6e6;
-    --b1:#e8f0ff; --b2:#eaf7ee; --b3:#fdf0e3;
+    --b1:#e8f0ff; --b2:#eaf7ee; --b3:#fdf0e3; --info:#1e40af;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -76,12 +76,13 @@
   .btn.sm{padding:6px 11px;font-size:12.5px}
 
   .note{font-size:13px;padding:10px 13px;border-radius:10px;margin-top:10px;
-    display:flex;gap:9px;align-items:flex-start;white-space:pre-wrap}
+    display:flex;gap:9px;align-items:flex-start;white-space:pre-wrap;
+    overflow-wrap:anywhere}
   .note b{flex:none}
   .note.ok{background:var(--okbg);color:var(--ok)}
   .note.err{background:var(--errbg);color:var(--err)}
   .note.warn{background:var(--warnbg);color:var(--warn)}
-  .note.info{background:var(--b1);color:#1e40af}
+  .note.info{background:var(--b1);color:var(--info)}
   .hide{display:none !important}
 
   .sp8{height:8px}
@@ -169,7 +170,7 @@
   td a{color:var(--accent);text-decoration:none}
   td a:hover{text-decoration:underline}
   .st{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap}
-  .st.active{background:var(--b1);color:#1e40af}
+  .st.active{background:var(--b1);color:var(--info)}
   .st.invitation{background:var(--okbg);color:var(--ok)}
   .st.discard{background:var(--errbg);color:var(--err)}
   .st.other{background:var(--soft);color:var(--dim)}

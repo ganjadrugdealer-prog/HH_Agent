@@ -43,6 +43,23 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def home_dir() -> Path:
+    """Куда приложению можно писать: data, selftest.log, crash.log.
+
+    На Windows и при запуске из исходников — рядом с exe/скриптом,
+    приложение портативное. На macOS рядом с исполняемым файлом — это
+    внутренность HH-Agent.app: при обновлении бандл заменяется вместе с
+    профилями и токенами, а запущенный из .dmg или из «Загрузок» (App
+    Translocation) он вообще только для чтения. Поэтому на маке —
+    ~/Library/Application Support/HH_Agent, рядом с ядром.
+    """
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        d = Path.home() / "Library" / "Application Support" / "HH_Agent"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return app_dir()
+
+
 def resource_dir() -> Path:
     """Наши ресурсы: в сборке это распакованный _MEIPASS."""
     base = getattr(sys, "_MEIPASS", None)
@@ -51,7 +68,7 @@ def resource_dir() -> Path:
 
 def data_root() -> Path:
     """Корень данных приложения (общий для всех профилей)."""
-    d = app_dir() / "data"
+    d = home_dir() / "data"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -65,14 +82,29 @@ def active_profile_dir() -> Path:
     return profiles.profile_dir(root, state["active"])
 
 
+def restart_env() -> dict:
+    """Окружение для нового экземпляра приложения.
+
+    Без PYINSTALLER_RESET_ENVIRONMENT дочерний onefile-процесс считает себя
+    частью текущего и берёт его распакованный _MEIPASS. Текущий процесс
+    сразу закрывается и удаляет эту папку — новый падает с
+    «Path .../_MEIxxxx does not exist», и после установки ядра приложение
+    просто исчезает. Воспроизведено на macOS.
+    """
+    env = dict(os.environ)
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def restart_app() -> None:
-    """Перезапускает приложение (после смены профиля)."""
+    """Перезапускает приложение (после установки ядра и смены профиля)."""
     try:
         if getattr(sys, "frozen", False):
             cmd = [sys.executable]
         else:
             cmd = [sys.executable, str(Path(__file__).resolve())]
-        subprocess.Popen(cmd, cwd=str(app_dir()), close_fds=True)
+        subprocess.Popen(cmd, cwd=str(home_dir()), close_fds=True,
+                         env=restart_env())
     except Exception:
         import traceback
 
@@ -245,6 +277,7 @@ def selftest() -> int:
     say("version     :", APP_VERSION)
     say("frozen      :", getattr(sys, "frozen", False))
     say("app_dir     :", app_dir())
+    say("data        :", data_root())
 
     try:
         from pkgutil import iter_modules
@@ -430,7 +463,7 @@ def selftest() -> int:
 
     say("RESULT      :", "OK" if ok else "FAILED")
     try:
-        (app_dir() / "selftest.log").write_text("\n".join(lines), encoding="utf-8")
+        (home_dir() / "selftest.log").write_text("\n".join(lines), encoding="utf-8")
     except Exception:
         pass
     return 0 if ok else 1
@@ -550,7 +583,7 @@ if __name__ == "__main__":
     except Exception:
         import traceback
 
-        with open(app_dir() / "crash.log", "a", encoding="utf-8") as fp:
+        with open(home_dir() / "crash.log", "a", encoding="utf-8") as fp:
             traceback.print_exc(file=fp)
         traceback.print_exc()
         raise SystemExit(1)
