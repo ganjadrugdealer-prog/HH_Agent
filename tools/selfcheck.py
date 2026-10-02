@@ -1338,10 +1338,12 @@ def t_mac_data_outside_bundle():
     """В собранном .app данные живут в Application Support, не в бандле."""
     import app_main
     real_platform, real_frozen = sys.platform, getattr(sys, "frozen", None)
-    real_exe, real_home = sys.executable, os.environ.get("HOME")
+    # Path.home() берёт HOME на posix и USERPROFILE на Windows — подменяем оба
+    real_exe = sys.executable
+    real_env = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE")}
     try:
         with tempfile.TemporaryDirectory() as d:
-            os.environ["HOME"] = d
+            os.environ["HOME"] = os.environ["USERPROFILE"] = d
             sys.platform = "darwin"
             sys.frozen = True
             sys.executable = str(Path(d) / "HH-Agent.app/Contents/MacOS/HH-Agent")
@@ -1358,10 +1360,11 @@ def t_mac_data_outside_bundle():
             del sys.frozen
         else:
             sys.frozen = real_frozen
-        if real_home is None:
-            os.environ.pop("HOME", None)
-        else:
-            os.environ["HOME"] = real_home
+        for k, v in real_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def t_mac_spec_onedir():
