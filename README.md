@@ -1,4 +1,4 @@
-# HH Agent (v1.2.2)
+# HH Agent (v1.2.3)
 
 Графическая оболочка (GUI) для автоматизации откликов на вакансии HeadHunter поверх консольной утилиты [`hh-applicant-tool`](https://pypi.org/project/hh-applicant-tool/).
 

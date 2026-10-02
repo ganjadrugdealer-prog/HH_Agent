@@ -509,7 +509,14 @@
 </div>
 <script>
 (function () {
-  var api = function () { return window.pywebview && window.pywebview.api; };
+  // pywebview сначала создаёт пустой window.pywebview.api и лишь потом
+  // наполняет его функциями (событие pywebviewready). Пустой объект
+  // считался готовым, первый вызов падал «… is not a function», и экран
+  // навсегда оставался на «Проверяю…». Ждём, пока появится нужный метод.
+  var api = function () {
+    var a = window.pywebview && window.pywebview.api;
+    return a && typeof a.app_state === 'function' ? a : null;
+  };
   var $ = function (id) { return document.getElementById(id); };
   var TITLES = {home:'Главная', letter:'Шаблоны сообщений', resumes:'Резюме',
                 search:'Настройки поиска', replies:'Отклики', settings:'Настройки'};
@@ -672,7 +679,9 @@
                  +'<span class="muted" style="margin-left:12px"></span>'
                  +'<span class="sp"></span><span class="tag"></span>';
       d.children[0].textContent = repDate(r.date || r.started);
-      d.children[1].textContent = 'Откликов: ' + num(c.applied || 0);
+      d.children[1].textContent = (c.would_apply && !c.applied)
+        ? 'Холостой: подошло бы ' + num(c.would_apply)
+        : 'Откликов: ' + num(c.applied || 0);
       var extra = [];
       if(c.filtered) extra.push('отсеяно ' + num(c.filtered));
       if(c.seen_before) extra.push('уже были ' + num(c.seen_before));
@@ -1271,8 +1280,8 @@
   function boot(){
     if(!api()){ setTimeout(boot,200); return; }
     try { api().ui_ready('app','v1'); } catch(e){}
-    refresh().then(function(){ show('home'); });
     setInterval(function(){ if(!running) refresh(); }, 20000);
+    refresh().then(function(){ show('home'); });
   }
   boot();
 })();

@@ -1180,15 +1180,17 @@ def t_hh_patch_dry_run_echo_and_no_email():
 
 
 def t_monitor_no_duplicate_resume_start():
-    """Старт резюме приходит и из print, и из логгера ядра — в ленте один."""
+    """Старт и финиш резюме приходят и из print, и из логгера ядра — в ленте по одному."""
     from run_monitor import RunMonitor
     with tempfile.TemporaryDirectory() as d:
         m = RunMonitor(_FakeTool(Path(d)), Path(d))
         m._push = lambda *a, **kw: None
         m.feed("Начинаю рассылку откликов для резюме: https://hh.ru/resume/**** (PR)")
         m.feed("🚀 Начинаю рассылку откликов для резюме: PR")
+        m.feed("Закончили рассылку откликов для резюме: https://hh.ru/resume/**** (PR). Отправлено: 0")
+        m.feed("✅️ Закончили рассылку для резюме: PR. Отправлено: 0")
         kinds = [e["kind"] for e in m.events]
-        assert kinds == ["resume_start"], kinds
+        assert kinds == ["resume_start", "resume_done"], kinds
 
 
 def _apply_api(root: Path):
@@ -1373,6 +1375,16 @@ def t_mac_spec_onedir():
     mac = spec[spec.find("if sys.platform == 'darwin':\n    # На macOS"):]
     assert "exclude_binaries=True" in mac and "COLLECT(" in mac, "mac-сборка не onedir"
     assert "BUNDLE(\n        coll" in mac, "BUNDLE собирается не из COLLECT"
+
+
+def t_ui_waits_for_bridge_methods():
+    """Экран не стартует на пустом pywebview.api — ждёт нужный метод."""
+    for page, method in (("app.html", "app_state"), ("wizard.html", "wizard_state")):
+        src = (BUILD / "ui" / page).read_text(encoding="utf-8")
+        m = re.search(r"var api\s*=\s*function\s*\(\)\s*\{(.*?)\};", src, re.S)
+        assert m, f"{page}: нет помощника api()"
+        assert f"typeof a.{method}" in m.group(1).replace(" ", "").replace("typeofa.", "typeof a."), \
+            f"{page}: api() не проверяет, что {method} уже функция"
 
 
 def main():

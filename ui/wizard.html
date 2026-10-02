@@ -146,7 +146,14 @@
 
 <script>
 (function(){
-  var api=function(){return window.pywebview&&window.pywebview.api;};
+  // pywebview сначала создаёт пустой window.pywebview.api и лишь потом
+  // наполняет его функциями (событие pywebviewready). Пустой объект
+  // считался готовым, первый вызов падал «… is not a function», и экран
+  // навсегда оставался на «Проверяю…». Ждём, пока появится нужный метод.
+  var api=function(){
+    var a=window.pywebview&&window.pywebview.api;
+    return a&&typeof a.wizard_state==='function'?a:null;
+  };
   var $=function(id){return document.getElementById(id);};
   var done={1:false,2:false,3:false,4:false};
   var current=1;
