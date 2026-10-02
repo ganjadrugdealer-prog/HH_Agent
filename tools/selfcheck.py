@@ -1133,6 +1133,64 @@ def t_hh_patch_dry_run_guard_restored():
         av.Operation._hh_dry_patched = saved_flag
 
 
+def t_hh_patch_dry_run_echo_and_no_email():
+    """Холостой прогон: видно, что подошло бы; писем на email не шлёт."""
+    import contextlib
+    import logging
+    import hh_patch
+    from hh_applicant_tool.operations import apply_vacancies as av
+    from run_monitor import classify
+    saved_run = av.Operation.run
+    saved_flag = getattr(av.Operation, "_hh_dry_patched", False)
+    saved_level = av.logger.level
+    seen = {}
+
+    def fake_run(self, tool, args):
+        seen["send_email"] = args.send_email
+        av.logger.debug("Пробуем откликнуться на вакансию: %s",
+                        "https://hh.ru/vacancy/42")
+
+    av.Operation.run = fake_run
+    av.Operation._hh_dry_patched = False
+    av.logger.setLevel(logging.DEBUG)
+    try:
+        hh_patch.patch_dry_run_blacklist()
+        tool = type("T", (), {})()
+        tool.api_client = _PutClient()
+        args = type("A", (), {})()
+        op = av.Operation.__new__(av.Operation)
+        args.dry_run, args.send_email = True, True
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            av.Operation.run(op, tool, args)
+        line = out.getvalue().strip()
+        assert seen["send_email"] is False, "dry-run отправил бы письмо на email"
+        assert line == hh_patch.DRY_RUN_MARK + " https://hh.ru/vacancy/42", line
+        assert classify(line) == "would_apply", classify(line)
+        assert not av.logger.filters, "фильтр холостого прогона остался на логгере"
+        args.dry_run = False
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            av.Operation.run(op, tool, args)
+        assert out.getvalue() == "", "боевой прогон печатает «подошла бы»"
+    finally:
+        av.Operation.run = saved_run
+        av.Operation._hh_dry_patched = saved_flag
+        av.logger.setLevel(saved_level)
+
+
+def t_monitor_no_duplicate_resume_start():
+    """Старт резюме приходит и из print, и из логгера ядра — в ленте один."""
+    from run_monitor import RunMonitor
+    with tempfile.TemporaryDirectory() as d:
+        m = RunMonitor(_FakeTool(Path(d)), Path(d))
+        m._push = lambda *a, **kw: None
+        m.feed("Начинаю рассылку откликов для резюме: https://hh.ru/resume/**** (PR)")
+        m.feed("🚀 Начинаю рассылку откликов для резюме: PR")
+        kinds = [e["kind"] for e in m.events]
+        assert kinds == ["resume_start"], kinds
+
+
 def _apply_api(root: Path):
     """AppApi без окна и сети, с письмом и вакансией 1 в базе."""
     import app_api

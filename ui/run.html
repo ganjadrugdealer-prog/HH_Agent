@@ -52,6 +52,7 @@
   .ev a{color:var(--accent);text-decoration:none}
   .ev a:hover{text-decoration:underline}
   .ev.applied{border-left-color:var(--ok)}
+  .ev.would_apply{border-left-color:#7c5cff}
   .ev.filtered,.ev.blacklisted{border-left-color:#e0a415}
   .ev.error,.ev.limit,.ev.rejected{border-left-color:var(--err)}
   .ev.resume_start,.ev.resume_done,.ev.all_done{border-left-color:var(--accent);background:#f7f9ff}
@@ -94,7 +95,7 @@
     <span class="clock" id="clock">00:00</span>
   </div>
   <div class="tiles">
-    <div class="tile hit"><b id="c_applied">0</b><span>откликов</span></div>
+    <div class="tile hit"><b id="c_applied">0</b><span id="l_applied">откликов</span></div>
     <div class="tile stop"><b id="c_filtered">0</b><span>стоп-слова</span></div>
     <div class="tile"><b id="c_seen_before">0</b><span>уже были</span></div>
     <div class="tile bad"><b id="c_rejected">0</b><span>отказ сразу</span></div>
@@ -125,12 +126,12 @@ let EV = [], COUNTS = {}, REPORT = null, TAB = 'feed', FINISHED = false, T0 = Da
 const $ = id => document.getElementById(id);
 
 const IC = {
-  applied:'📨', applied_test:'📨', applied_captcha:'📨', filtered:'🚫',
+  applied:'📨', applied_test:'📨', applied_captcha:'📨', would_apply:'🧪', filtered:'🚫',
   blacklisted:'🚫', seen_before:'⏩', rejected:'⛔', limit:'🛑', email:'📧',
   resume_start:'🚀', resume_done:'✅', all_done:'🏁', captcha:'🧩', redirect:'↪️',
   error:'⚠️', info:'·'
 };
-const IMPORTANT = new Set(['applied','applied_test','applied_captcha','filtered',
+const IMPORTANT = new Set(['applied','applied_test','applied_captcha','would_apply','filtered',
   'blacklisted','rejected','limit','resume_start','resume_done','all_done','error']);
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c =>
@@ -142,13 +143,21 @@ function urlCall(u){ return 'openUrl(' + esc(JSON.stringify(String(u))) + ')'; }
 
 function cls(kind){ return kind.startsWith('applied') ? 'applied' : kind; }
 
+// Значок события уже стоит в колонке слева — второй такой же в начале
+// текста («🚀 🚀 Начинаю…») убираем.
+function plain(e){
+  const ic = IC[e.kind];
+  const t = String(e.text || '');
+  return ic && ic !== '·' && t.startsWith(ic) ? t.slice(ic.length).trim() : t;
+}
+
 function evHtml(e){
-  const title = e.title ? esc(e.title) : esc(e.text);
+  const title = e.title ? esc(e.title) : esc(plain(e));
   const bits = [];
   if (e.salary) bits.push('<span class="money">' + esc(e.salary) + '</span>');
   if (e.area) bits.push(esc(e.area));
   if (e.remote) bits.push('удалённо');
-  if (e.title) bits.push(esc(e.text.replace(/https?:\/\/\S+/, '').trim()));
+  if (e.title) bits.push(esc(plain(e).replace(/https?:\/\/\S+/, '').trim()));
   const link = e.url ? ' · <a onclick="' + urlCall(e.url) + '">открыть</a>' : '';
   return '<div class="ev ' + cls(e.kind) + '">' +
     '<div class="ic">' + (IC[e.kind] || '·') + '</div>' +
@@ -169,10 +178,17 @@ function scroll(){
   if ($('autoscroll').checked){ const m = document.querySelector('main'); m.scrollTop = m.scrollHeight; }
 }
 
+// В холостом прогоне откликов нет — первая плашка считает, что подошло бы.
+function isDry(c){ return !!(c && c.would_apply) && !(c && c.applied); }
+
 function counters(c){
   COUNTS = c || {};
   for (const k of ['applied','filtered','seen_before','rejected','error'])
     $('c_' + k).textContent = COUNTS[k] || 0;
+  if (isDry(COUNTS)){
+    $('c_applied').textContent = COUNTS.would_apply;
+    $('l_applied').textContent = 'подошло бы';
+  }
 }
 
 function tab(name){
@@ -219,8 +235,10 @@ setInterval(() => { if (!FINISHED) $('clock').textContent = fmt((Date.now()-T0)/
 /* --- отчёт --- */
 function renderReport(rep){
   const c = rep.counts || {};
+  const dry = isDry(c);
   const seg = [
-    ['applied',   c.applied   || 0, 'var(--ok)',   'откликов'],
+    dry ? ['would',  c.would_apply, '#7c5cff',    'подошло бы']
+        : ['applied', c.applied || 0, 'var(--ok)', 'откликов'],
     ['filtered',  c.filtered  || 0, '#e0a415',     'стоп-слова'],
     ['seen',      c.seen_before||0, '#9aa2ad',     'уже были'],
     ['rejected',  c.rejected  || 0, 'var(--err)',  'отказ сразу'],
@@ -245,10 +263,12 @@ function renderReport(rep){
         (r.applied || 0) + '</td></tr>').join('') + '</table></div>';
   }
 
-  const sent = (rep.events || []).filter(e => e.kind.startsWith('applied'));
+  const sent = (rep.events || []).filter(e =>
+    dry ? e.kind === 'would_apply' : e.kind.startsWith('applied'));
   if (sent.length){
     const withPay = sent.filter(e => e.salary);
-    html += '<div class="rep"><h2>Куда откликнулись (' + sent.length + ')</h2><table>' +
+    html += '<div class="rep"><h2>' + (dry ? 'Куда откликнулись бы (' : 'Куда откликнулись (') +
+      sent.length + ')</h2><table>' +
       '<tr><th>Вакансия</th><th>Зарплата</th><th>Город</th></tr>' +
       sent.slice(0, 60).map(e => '<tr><td>' +
         (e.url ? '<a onclick="' + urlCall(e.url) + '">' + esc(e.title || e.url) + '</a>'

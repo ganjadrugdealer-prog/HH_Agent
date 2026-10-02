@@ -13,6 +13,10 @@
     Штатно вакансия улетает в blacklist даже в холостом прогоне, то есть
     «посмотреть, что отсеется» необратимо меняет аккаунт.
 
+    Заодно холостой прогон не шлёт писем на email и показывает в ленте,
+    на что откликнулся бы: штатно он молчит, и минутами кажется, что
+    ничего не происходит.
+
 Патч 3 — окно входа по размеру экрана (иначе капча уезжает за край).
 
 Патч 4 — случайная пауза между запросами к API.
@@ -90,6 +94,24 @@ def patch_excluded_by_name() -> None:
     av.Operation._is_excluded = _is_excluded_by_name
 
 
+DRY_RUN_MARK = "🧪 Подошла бы вакансия"
+_TRY_APPLY = "Пробуем откликнуться на вакансию"
+
+
+class _DryRunEcho(logging.Filter):
+    """Отладочное «Пробуем откликнуться» ядра → видимая строка в ленте.
+
+    print внутри прогона перехватывается штатным Api и уходит в ленту,
+    как и собственные строки ядра «📨 Отправили отклик».
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if str(record.msg).startswith(_TRY_APPLY) and record.args:
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            print(DRY_RUN_MARK, args[0])
+        return True
+
+
 def patch_dry_run_blacklist() -> None:
     """Патч 2 — в холостом прогоне не трогаем чёрный список на hh.ru."""
     from hh_applicant_tool.operations import apply_vacancies as av
@@ -117,9 +139,14 @@ def patch_dry_run_blacklist() -> None:
             return real_put(endpoint, *a, **kw)
 
         client.put = guarded_put
+        # письма на email ядро отправляет без оглядки на --dry-run
+        args.send_email = False
+        echo = _DryRunEcho()
+        av.logger.addFilter(echo)
         try:
             return original_run(self, tool, args)
         finally:
+            av.logger.removeFilter(echo)
             if had_own:
                 client.put = prev
             else:

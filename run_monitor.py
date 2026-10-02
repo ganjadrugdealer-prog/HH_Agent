@@ -24,6 +24,7 @@ VACANCY_ID_RE = re.compile(r"/vacancy/(\d+)")
 
 # Тип события -> как показывать. Порядок важен: правила проверяются сверху вниз.
 RULES: list[tuple[str, str]] = [
+    ("would_apply", "🧪 Подошла бы вакансия"),
     ("applied_test", "📨 Отправили отклик на вакансию с тестом"),
     ("applied_captcha", "📨 Отправили отклик на вакансию после капчи"),
     ("applied", "📨 Отправили отклик"),
@@ -32,6 +33,8 @@ RULES: list[tuple[str, str]] = [
     ("rejected", "⛔ Пришел отказ от"),
     ("email", "📧 Отправлено письмо"),
     ("resume_start", "🚀 Начинаю рассылку откликов для резюме:"),
+    # то же событие из логгера ядра, со ссылкой на резюме в звёздочках
+    ("duplicate", "Начинаю рассылку откликов для резюме:"),
     ("resume_done", "✅️ Закончили рассылку для резюме:"),
     ("all_done", "📝 Отклики на вакансии разосланы"),
     ("filtered", "Вакансия попала под фильтр:"),
@@ -43,6 +46,7 @@ RULES: list[tuple[str, str]] = [
 # Какие события считаем в сводке и как называем по-русски
 COUNTERS = {
     "applied": "Откликов отправлено",
+    "would_apply": "Подошло бы (холостой прогон)",
     "filtered": "Отсеяно стоп-словами",
     "seen_before": "Пропущено, уже отклонялись",
     "rejected": "Отказ пришёл сразу",
@@ -144,6 +148,8 @@ class RunMonitor:
         if not message:
             return
         kind = classify(message)
+        if kind == "duplicate":
+            return
         url_m = URL_RE.search(message)
         url = url_m.group(0).rstrip(".,);") if url_m else None
 
@@ -154,7 +160,7 @@ class RunMonitor:
             "url": url,
         }
 
-        if kind in ("applied", "applied_test", "applied_captcha",
+        if kind in ("applied", "applied_test", "applied_captcha", "would_apply",
                     "filtered", "blacklisted", "seen_before", "rejected"):
             event.update(self._vacancy_info(url))
 
