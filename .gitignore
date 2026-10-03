@@ -32,3 +32,21 @@ selftest.log
 .idea/
 .vscode/
 *.swp
+
+# Рабочие материалы и служебные файлы - в репозиторий не попадают
+CLAUDE.md
+AGENTS.md
+GUARDRAILS.md
+STATE.md
+.claude/
+agents/
+docs/
+.env.example
+tools/fix_ui.py
+
+# Старая рабочая копия проекта на Windows (вложенный клон со своим .git, .venv и dist)
+src/
+
+# Маковские артефакты (venv, сборка, Python), перенесены с мака
+_mac/
+bin/
