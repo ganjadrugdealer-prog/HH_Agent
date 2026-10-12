@@ -10,10 +10,10 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             color: #333;
-            overflow: hidden;
+            overflow-y: auto;
         }
         .loader-container {
             text-align: center;
@@ -22,6 +22,8 @@
             border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
             width: 400px;
+            max-width: calc(100vw - 112px);
+            margin: 16px;
         }
         .spinner {
             width: 50px;
@@ -38,8 +40,10 @@
         }
         h2 { margin-top: 0; font-size: 1.2rem; }
         p { color: #666; font-size: 0.9rem; }
-        #status-text { font-weight: bold; margin-top: 20px; color: #007bff; word-break: break-word; }
-        #status-text.error { color: #b42318; }
+        #status-text { font-weight: bold; margin-top: 20px; color: #007bff; word-break: break-word;
+            white-space: pre-line; user-select: text; }
+        #status-text.error { color: #b42318; font-weight: normal; font-size: 0.85rem; text-align: left; }
+        #hint { display: none; margin-top: 14px; font-size: 0.85rem; color: #8a6100; }
         #retry { display: none; margin-top: 18px; padding: 8px 18px; border-radius: 8px;
             border: 1px solid #c9ced6; background: #fff; cursor: pointer; font-size: 14px; }
     </style>
@@ -48,34 +52,91 @@
     <div class="loader-container">
         <div class="spinner" id="spinner"></div>
         <h2>Первый запуск</h2>
-        <p>Настройка окружения и загрузка ядра.<br>Пожалуйста, подождите...</p>
+        <p id="intro">Настройка окружения и загрузка ядра.<br>Пожалуйста, подождите...</p>
         <div id="status-text">Инициализация...</div>
+        <div id="hint"></div>
         <button id="retry" onclick="startInstall()">Повторить</button>
     </div>
 
     <script>
+        // Установку запускает сама программа, страница только показывает ход.
+        // Если мост к программе не поднялся, через 15 с объясняем, что делать,
+        // вместо вечного «Инициализация...».
+        var api = function () {
+            var a = window.pywebview && window.pywebview.api;
+            return a && typeof a.loader_state === 'function' ? a : null;
+        };
+        var lastChange = Date.now();
+        var bridgeReady = false;
+        var failed = false;
+        var logPlace = /Mac/.test(navigator.platform)
+            ? '~/Library/Application Support/HH_Agent/loader.log'
+            : 'loader.log рядом с HH-Agent.exe';
+
+        function showHint(text) {
+            var el = document.getElementById('hint');
+            el.innerText = text;
+            el.style.display = text ? 'block' : 'none';
+        }
+
         function setStatus(text, isError) {
             var el = document.getElementById('status-text');
             el.innerText = text;
             el.className = isError ? 'error' : '';
+            failed = !!isError;
+            lastChange = Date.now();
+            showHint('');
             document.getElementById('spinner').style.display = isError ? 'none' : '';
+            document.getElementById('intro').style.display = isError ? 'none' : '';
             document.getElementById('retry').style.display = isError ? 'inline-block' : 'none';
         }
 
         // Вызывается из Python по ходу установки.
         window.update_progress = function (msg) { setStatus(msg, false); };
         window.install_failed = function (msg) {
-            setStatus('Ошибка: ' + msg + '\nПроверьте интернет и нажмите «Повторить».', true);
+            var tail = /Повторить/.test(String(msg)) ? '' : '\n\nПроверьте интернет и нажмите «Повторить».';
+            setStatus('Ошибка: ' + msg + tail, true);
         };
 
+        function applyState(st) {
+            if (!st || !st.message) return;
+            if (st.status === 'error') window.install_failed(st.message);
+            else window.update_progress(st.message);
+        }
+
         function startInstall() {
+            var a = api();
+            if (!a) return;
             setStatus('Инициализация...', false);
-            window.pywebview.api.install_core().catch(function (err) {
+            a.install_core().catch(function (err) {
                 window.install_failed(err);
             });
         }
 
-        window.addEventListener('pywebviewready', startInstall);
+        function onBridge(tries) {
+            var a = api();
+            if (!a) {
+                if (tries < 50) setTimeout(function () { onBridge(tries + 1); }, 100);
+                return;
+            }
+            bridgeReady = true;
+            a.loader_state().then(applyState).catch(function () {});
+        }
+
+        window.addEventListener('pywebviewready', function () { onBridge(0); });
+
+        setInterval(function () {
+            if (failed) return;
+            var idle = Date.now() - lastChange;
+            if (!bridgeReady && idle > 15000) {
+                showHint('Окно не получает ответа от программы. Установка идёт в фоне: '
+                    + 'подождите ещё 2–3 минуты, программа перезапустится сама. '
+                    + 'Если ничего не изменится, пришлите файл ' + logPlace + '.');
+            } else if (bridgeReady && idle > 60000) {
+                showHint('Этот шаг идёт дольше обычного. Если за пару минут ничего '
+                    + 'не изменится, пришлите файл ' + logPlace + '.');
+            }
+        }, 3000);
     </script>
     <script src="theme.js"></script>
 </body>

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "HH Agent"
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.2.5"
 
 
 def _pin_browsers_path() -> None:
@@ -436,6 +436,7 @@ def selftest() -> int:
             import webview.platforms.edgechromium  # noqa: F401
 
             say("webview     : ok (edgechromium)")
+            say("webview2    :", webview2_version())
         else:
             say("webview     : ok")
     except Exception as exc:
@@ -472,54 +473,170 @@ def selftest() -> int:
 # ---------------------------------------------------------------------- main
 
 
+def webview2_version() -> str:
+    """Версия WebView2 Runtime из реестра: на корпоративных ПК её замораживают."""
+    if sys.platform != "win32":
+        return "-"
+    import winreg
+
+    client = r"Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    places = (
+        (winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\" + client),
+        (winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\" + client),
+        (winreg.HKEY_CURRENT_USER, "SOFTWARE\\" + client),
+    )
+    for root, path in places:
+        try:
+            with winreg.OpenKey(root, path) as key:
+                value, _ = winreg.QueryValueEx(key, "pv")
+        except OSError:
+            continue
+        if value and value != "0.0.0.0":
+            return str(value)
+    return "не найден"
+
+
+def _proxy_summary() -> str:
+    """Прокси, которые увидит urllib, без логинов и паролей."""
+    import urllib.parse
+    import urllib.request
+
+    try:
+        found = urllib.request.getproxies()
+    except Exception as exc:
+        return f"не прочитать ({exc})"
+    parts = []
+    for scheme, url in sorted(found.items()):
+        host = urllib.parse.urlsplit(url).hostname if "://" in url else url
+        parts.append(f"{scheme}={host}")
+    return ", ".join(parts) or "нет"
+
+
+def loader_log():
+    """Журнал первого запуска — loader.log рядом с data.
+
+    Окно первого запуска ничего не показывает, если не поднялся WebView2,
+    и раньше от зависания не оставалось следа. Пишем сюда шаги установки,
+    ошибки и сообщения pywebview.
+    """
+    import logging
+
+    log = logging.getLogger("hh_agent.loader")
+    if log.handlers:
+        return log
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    try:
+        path = home_dir() / "loader.log"
+        mode = "w" if path.exists() and path.stat().st_size > 512 * 1024 else "a"
+        handler: logging.Handler = logging.FileHandler(path, mode=mode, encoding="utf-8")
+    except OSError:
+        handler = logging.NullHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    log.addHandler(handler)
+    logging.getLogger("pywebview").addHandler(handler)
+    return log
+
+
 class LoaderApi:
-    """API экрана первого запуска: скачивание ядра."""
+    """API экрана первого запуска: скачивание ядра.
+
+    Установка не зависит от окна: её запускает Python, а экран только
+    показывает ход. Если мост JS↔Python в WebView2 не поднялся (так висел
+    корпоративный ноутбук на «Инициализации»), ядро всё равно встанет и
+    приложение перезапустится.
+
+    Публичны только методы для JS. pywebview перед подключением окна обходит
+    все публичные поля объекта; раньше здесь было свойство window, и обход
+    уходил в объекты WinForms/WebView2, которые можно трогать только из
+    потока окна, — тысячи ошибок и задержка подключения окна.
+    """
 
     def __init__(self):
+        import queue
+        import threading
+
         self._window = None
+        self._lock = threading.Lock()
         self._running = False
+        self._state = {"status": "idle", "message": ""}
+        self._ui = queue.Queue()
+        self._ui_thread = None
+        self._log = loader_log()
 
     def set_window(self, window):
         self._window = window
 
-    # совместимость со старым именем
-    @property
-    def window(self):
-        return self._window
-
     def _js(self, fn: str, *args) -> None:
-        """Зовём JS с безопасно экранированными аргументами."""
+        """Зовём JS с безопасно экранированными аргументами, не дожидаясь окна.
+
+        evaluate_js в pywebview ждёт ответа страницы без таймаута; если мост
+        WebView2 не поднялся, вместе с ним зависла бы установка ядра. Поэтому
+        вызовы уходят в очередь отдельного потока.
+        """
         if not self._window:
             return
         import json
+        import threading
 
-        try:
-            payload = ", ".join(json.dumps(a, ensure_ascii=False) for a in args)
-            self._window.evaluate_js(f"if(window.{fn})window.{fn}({payload})")
-        except Exception:
-            pass
+        payload = ", ".join(json.dumps(a, ensure_ascii=False) for a in args)
+        self._ui.put(f"if(window.{fn})window.{fn}({payload})")
+        if self._ui_thread is None:
+            self._ui_thread = threading.Thread(target=self._ui_worker, daemon=True)
+            self._ui_thread.start()
+
+    def _ui_worker(self) -> None:
+        while True:
+            script = self._ui.get()
+            try:
+                self._window.evaluate_js(script)
+            except Exception as exc:
+                self._log.warning("окно не приняло обновление: %s", exc)
+
+    def _set(self, status: str, message: str) -> None:
+        self._state = {"status": status, "message": message}
+        if status == "error":
+            self._log.error("установка не удалась: %s", message)
+            self._js("install_failed", message)
+        else:
+            self._log.info("%s", message)
+            self._js("update_progress", message)
+
+    def loader_state(self) -> dict:
+        """Текущее состояние — окно спрашивает его, когда мост поднялся."""
+        self._log.info("окно на связи (pywebviewready)")
+        return dict(self._state)
+
+    def autostart(self) -> None:
+        """Запуск установки из Python, без сигнала от окна (webview.start(func))."""
+        window = self._window
+        if window is not None and not window.events.shown.wait(15):
+            self._log.warning("окно не показалось за 15 с, установка идёт без него")
+        self.install_core()
 
     def install_core(self):
         import threading
 
-        if self._running:
-            return {"status": "started"}
-        self._running = True
+        with self._lock:
+            if self._running:
+                return {"status": "running"}
+            if self._state["status"] == "done":
+                return {"status": "done"}
+            self._running = True
 
         def _task():
             import core_manager
             import time
 
             try:
-                core_manager.install_core(lambda msg: self._js("update_progress", msg))
-                self._js("update_progress", "Готово! Перезапуск...")
+                version = core_manager.install_core(lambda msg: self._set("progress", msg))
+                self._log.info("ядро %s установлено, перезапуск", version)
+                self._set("done", "Готово! Перезапуск...")
                 time.sleep(1)
                 restart_app()
             except Exception as exc:
-                import traceback
-
-                traceback.print_exc()
-                self._js("install_failed", f"{exc}")
+                self._log.exception("ошибка установки ядра")
+                self._set("error", f"{exc}")
             finally:
                 self._running = False
 
@@ -544,17 +661,22 @@ def main() -> int:
         import webview
 
         api = LoaderApi()
+        log = loader_log()
+        log.info("первый запуск: %s %s, %s, frozen=%s, WebView2 %s, прокси: %s",
+                     APP_NAME, APP_VERSION, sys.platform,
+                     getattr(sys, "frozen", False), webview2_version(), _proxy_summary())
         loader_url = (resource_dir() / "loader.html").as_uri()
         window = webview.create_window(
             title=f"{APP_NAME} Launcher",
             url=loader_url,
             js_api=api,
             width=520,
-            height=420,
+            height=480,
             resizable=False,
         )
         api.set_window(window)
-        webview.start()
+        webview.start(api.autostart)
+        log.info("окно первого запуска закрыто")
         return 0
 
     core_manager.init_core()

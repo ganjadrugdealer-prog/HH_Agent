@@ -447,8 +447,9 @@ def t_core_manager_fallback_version():
         raise Stop
 
     saved = (core_manager.get_approved_version, core_manager._fetch_pypi,
-             core_manager._pick_artifact)
+             core_manager._pick_artifact, core_manager.find_local_archive)
     try:
+        core_manager.find_local_archive = lambda version: None
         core_manager.get_approved_version = lambda: None
         core_manager._fetch_pypi = lambda: {
             "info": {"version": "2.0.8"},
@@ -460,8 +461,132 @@ def t_core_manager_fallback_version():
             pass
     finally:
         (core_manager.get_approved_version, core_manager._fetch_pypi,
-         core_manager._pick_artifact) = saved
+         core_manager._pick_artifact, core_manager.find_local_archive) = saved
     assert picked == [["old"]], picked
+
+
+def _fake_core_wheel(path: Path) -> str:
+    """Минимальный «wheel» ядра; возвращает его sha256."""
+    import hashlib
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("hh_applicant_tool/__init__.py", "")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _core_sandbox(d: Path, fn):
+    """Подменяет пути и сеть core_manager на время fn(core_manager)."""
+    import core_manager
+    names = ("get_core_path", "marker_path", "local_archive_dirs", "KNOWN_ARCHIVES",
+             "get_approved_version", "_fetch_pypi")
+    saved = {n: getattr(core_manager, n) for n in names}
+
+    def no_network():
+        raise core_manager.urllib.error.URLError("timed out")
+
+    try:
+        core_manager.get_core_path = lambda: d / "HH_Agent" / "core"
+        core_manager.marker_path = lambda: d / "HH_Agent" / "reinstall.flag"
+        core_manager.local_archive_dirs = lambda: [d / "Downloads"]
+        core_manager.get_approved_version = lambda: None
+        core_manager._fetch_pypi = no_network
+        (d / "Downloads").mkdir(parents=True, exist_ok=True)
+        return fn(core_manager)
+    finally:
+        for n, v in saved.items():
+            setattr(core_manager, n, v)
+
+
+def t_core_manager_local_archive():
+    """PyPI закрыт, а ядро скачано в браузере — ставим из «Загрузок»."""
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+
+        def body(cm):
+            wheel = d / "Downloads" / f"hh_applicant_tool-{cm.FALLBACK_CORE_VERSION}-py3-none-any (1).whl"
+            sha = _fake_core_wheel(wheel)
+            cm.KNOWN_ARCHIVES = {sha: (cm.FALLBACK_CORE_VERSION, True)}
+            assert cm.install_core() == cm.FALLBACK_CORE_VERSION
+            assert (d / "HH_Agent" / "core" / "hh_applicant_tool" / "__init__.py").exists()
+            assert wheel.exists(), "файл пользователя удалён после установки"
+
+        _core_sandbox(d, body)
+
+
+def t_core_manager_local_archive_tampered():
+    """Файл с подходящим именем, но чужим содержимым не ставится."""
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+
+        def body(cm):
+            wheel = d / "Downloads" / f"hh_applicant_tool-{cm.FALLBACK_CORE_VERSION}-py3-none-any.whl"
+            _fake_core_wheel(wheel)
+            assert cm.find_local_archive(cm.FALLBACK_CORE_VERSION) is None
+            try:
+                cm.install_core()
+            except RuntimeError as exc:
+                text = str(exc)
+            else:
+                raise AssertionError("поддельный архив установлен")
+            assert "timed out" in text, text
+            assert f"hh-applicant-tool/{cm.FALLBACK_CORE_VERSION}" in text, \
+                "в ошибке нет подсказки, где скачать ядро руками"
+            assert not (d / "HH_Agent" / "core").exists()
+
+        _core_sandbox(d, body)
+
+
+@skip_on_network
+def t_core_manager_known_archives_match_pypi():
+    """Зашитые sha256 совпадают с PyPI — иначе ручная установка не сработает."""
+    import json
+    import core_manager
+    req = core_manager.urllib.request.Request(
+        core_manager.PYPI_URL, headers={"User-Agent": "HH-Agent"})
+    with core_manager._open(req, timeout=20) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    for sha, (version, _) in core_manager.KNOWN_ARCHIVES.items():
+        digests = {f["digests"]["sha256"] for f in data["releases"].get(version, [])}
+        assert sha in digests, f"{version}: {sha[:12]}… нет на PyPI"
+    assert any(v == core_manager.FALLBACK_CORE_VERSION
+               for v, _ in core_manager.KNOWN_ARCHIVES.values())
+
+
+def t_core_manager_cert_fallback():
+    """Сертификат не принят certifi — повтор с системными, проверка не отключается."""
+    import ssl
+    import urllib.error
+    import core_manager
+    calls = []
+
+    def fake(req, timeout, context):
+        calls.append(context)
+        if len(calls) == 1:
+            raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "self-signed"))
+        return "ok"
+
+    saved = core_manager._urlopen
+    try:
+        core_manager._urlopen = fake
+        req = core_manager.urllib.request.Request("https://pypi.org/")
+        assert core_manager._open(req, timeout=1) == "ok"
+        assert len(calls) == 2 and calls[0] is not calls[1]
+        assert calls[1].verify_mode == ssl.CERT_REQUIRED and calls[1].check_hostname
+
+        calls.clear()
+
+        def timeout(req, timeout, context):
+            calls.append(context)
+            raise urllib.error.URLError("timed out")
+
+        core_manager._urlopen = timeout
+        try:
+            core_manager._open(req, timeout=1)
+        except urllib.error.URLError:
+            pass
+        assert len(calls) == 1, "таймаут не должен повторяться с другими сертификатами"
+    finally:
+        core_manager._urlopen = saved
 
 
 def t_core_manager_sdist():
@@ -1051,7 +1176,7 @@ def t_core_manager_ssl_context():
     src = inspect.getsource(core_manager)
     assert src.count("urllib.request.urlopen(") == 1, \
         "urlopen вызывается в обход _open — без SSL-контекста"
-    assert "context=ssl_context()" in inspect.getsource(core_manager._open)
+    assert "ssl_context()" in inspect.getsource(core_manager._open)
     ctx = core_manager.ssl_context()
     assert isinstance(ctx, ssl.SSLContext)
     assert ctx.verify_mode == ssl.CERT_REQUIRED
@@ -1507,6 +1632,115 @@ def t_ui_waits_for_bridge_methods():
         assert m, f"{page}: нет помощника api()"
         assert f"typeof a.{method}" in m.group(1).replace(" ", "").replace("typeofa.", "typeof a."), \
             f"{page}: api() не проверяет, что {method} уже функция"
+
+
+def _loader_api():
+    import app_main
+    return app_main.LoaderApi()
+
+
+def t_loader_js_does_not_block():
+    """Зависший evaluate_js (мост WebView2 не поднялся) не держит установку."""
+    import threading
+    import time
+    hang = threading.Event()
+
+    class Window:
+        def evaluate_js(self, script):
+            hang.wait(30)
+
+    api = _loader_api()
+    api.set_window(Window())
+    t = time.monotonic()
+    for i in range(3):
+        api._js("update_progress", f"шаг {i}")
+    hang.set()
+    assert time.monotonic() - t < 0.5, "вызов JS блокирует поток установки"
+
+
+def t_loader_api_exposes_only_methods():
+    """pywebview обходит публичные поля API — там не должно быть окна и логгера."""
+    import inspect
+    api = _loader_api()
+    api.set_window(object())
+    extra = [n for n in dir(api) if not n.startswith("_")
+             and not inspect.ismethod(getattr(api, n))]
+    assert not extra, f"публичные поля, которые pywebview станет обходить: {extra}"
+
+
+def t_loader_installs_once():
+    """Автостарт из Python и кнопка в окне не запускают две установки."""
+    import threading
+    import time
+    import core_manager
+    release = threading.Event()
+    calls = []
+
+    def fake_install(progress=None, target_version=None):
+        calls.append(1)
+        release.wait(5)
+        raise RuntimeError("стоп")
+
+    saved = core_manager.install_core
+    try:
+        core_manager.install_core = fake_install
+        api = _loader_api()
+        first = api.install_core()
+        second = api.install_core()
+        release.set()
+        for _ in range(50):
+            if api.loader_state()["status"] == "error":
+                break
+            time.sleep(0.05)
+    finally:
+        core_manager.install_core = saved
+    assert first == {"status": "started"} and second == {"status": "running"}, (first, second)
+    assert len(calls) == 1, calls
+    st = api.loader_state()
+    assert st == {"status": "error", "message": "стоп"}, st
+
+
+def t_loader_autostarts_from_python():
+    """Установку запускает программа; страница не обязана её начинать."""
+    import inspect
+    import app_main
+    src = inspect.getsource(app_main.main)
+    assert "webview.start(api.autostart)" in src, "установка снова ждёт сигнала окна"
+    html = (BUILD / "ui" / "loader.html").read_text(encoding="utf-8")
+    assert "loader_state" in html, "окно не узнаёт состояние, если мост поднялся поздно"
+    assert "typeof a.loader_state" in html.replace(" ", " "), "api() не ждёт методы моста"
+    assert "setInterval" in html and "loader.log" in html, "нет подсказки при зависании"
+    assert "'pywebviewready', startInstall" not in html
+
+
+def t_loader_log_written():
+    """Журнал первого запуска пишется в loader.log."""
+    import logging
+    import app_main
+    with tempfile.TemporaryDirectory() as d:
+        log = logging.getLogger("hh_agent.loader")
+        saved_handlers = list(log.handlers)
+        saved_home = app_main.home_dir
+        for h in saved_handlers:
+            log.removeHandler(h)
+        try:
+            app_main.home_dir = lambda: Path(d)
+            app_main.loader_log().info("проверка журнала")
+            logging.getLogger("hh_agent.loader.core").warning("из core_manager")
+            for h in log.handlers:
+                h.flush()
+            text = (Path(d) / "loader.log").read_text(encoding="utf-8")
+        finally:
+            for h in list(log.handlers):
+                log.removeHandler(h)
+                logging.getLogger("pywebview").removeHandler(h)
+                h.close()
+            for h in saved_handlers:
+                log.addHandler(h)
+            app_main.home_dir = saved_home
+    assert "проверка журнала" in text and "из core_manager" in text, text
+    assert app_main.webview2_version()
+    assert "@" not in app_main._proxy_summary()
 
 
 def main():
