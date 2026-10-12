@@ -1668,6 +1668,33 @@ def t_loader_api_exposes_only_methods():
     assert not extra, f"публичные поля, которые pywebview станет обходить: {extra}"
 
 
+def t_browsers_next_to_exe():
+    """Сборка для закрытой сети: ms-playwright рядом с exe берётся вместо скачивания."""
+    import app_main
+    with tempfile.TemporaryDirectory() as d:
+        exe = Path(d) / "HH-Agent.exe"
+        exe.write_bytes(b"")
+        saved = (os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None), sys.executable,
+                 getattr(sys, "frozen", None), sys.platform)
+        try:
+            sys.executable, sys.frozen, sys.platform = str(exe), True, "win32"
+            app_main._pin_browsers_path()
+            fallback = os.environ.pop("PLAYWRIGHT_BROWSERS_PATH")
+            (Path(d) / "ms-playwright").mkdir()
+            app_main._pin_browsers_path()
+            bundled = os.environ.pop("PLAYWRIGHT_BROWSERS_PATH")
+        finally:
+            env, sys.executable, frozen, sys.platform = saved
+            if frozen is None:
+                del sys.frozen
+            else:
+                sys.frozen = frozen
+            if env is not None:
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = env
+    assert Path(bundled) == (Path(d) / "ms-playwright").resolve(), bundled
+    assert Path(fallback).name == "ms-playwright" and Path(d).name not in fallback, fallback
+
+
 def t_loader_installs_once():
     """Автостарт из Python и кнопка в окне не запускают две установки."""
     import threading

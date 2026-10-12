@@ -25,6 +25,13 @@ def _pin_browsers_path() -> None:
     """
     if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
         return
+    # Сборка для закрытой сети: браузер лежит в ms-playwright рядом с exe,
+    # и скачивать его не нужно.
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
+        bundled = Path(sys.executable).resolve().parent / "ms-playwright"
+        if bundled.is_dir():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(bundled)
+            return
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
         path = Path(base) / "ms-playwright"
