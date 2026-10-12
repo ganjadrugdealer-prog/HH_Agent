@@ -18,6 +18,7 @@
     ничего не происходит.
 
 Патч 3 — окно входа по размеру экрана (иначе капча уезжает за край).
+    Там же страница входа не ждёт рекламных счётчиков hh.ru (patch_auth_page_load).
 
 Патч 4 — случайная пауза между запросами к API.
     Штатно интервал фиксированный (DEFAULT_DELAY = 0.345), то есть запросы
@@ -27,6 +28,9 @@
     Движок разворачивает шаблон случайно и может дважды прислать работодателю
     один и тот же текст. Смотрим историю переписки и выбираем то, чего там ещё
     не было.
+
+Патч 8 — капча при отклике: без ключа OpenAI окно hh.ru для ввода руками
+    (patch_manual_captcha), рассылка ждёт и повторяет отклик.
 """
 from __future__ import annotations
 
@@ -73,6 +77,8 @@ def apply_patches(memory_path=None) -> None:
         (patch_excluded_by_name, "стоп-слова по названию"),
         (patch_dry_run_blacklist, "чёрный список в dry-run"),
         (patch_auth_window, "окно входа"),
+        (patch_auth_page_load, "загрузка страницы входа"),
+        (patch_manual_captcha, "капча руками"),
         (patch_api_delay, "случайная пауза"),
         (lambda: patch_ping_variety(memory_path), "разнообразие пингов"),
         (patch_sqlite_types, "безопасные типы sqlite"),
@@ -327,3 +333,150 @@ def patch_auth_window() -> None:
     Browser.new_context = new_context
     BrowserType._hh_window_patched = True
     logger.debug("hh_patch: окно входа %sx%s", width, height)
+
+
+# ------------------------------------------------- загрузка страницы входа
+
+# Чего ждать при открытии страницы входа вместо полной загрузки.
+AUTH_WAIT_UNTIL = "domcontentloaded"
+
+
+def patch_auth_page_load() -> None:
+    """Патч 7 — страница входа не ждёт рекламных счётчиков.
+
+    Движок открывает OAuth-страницу с wait_until="load" и таймаутом 60 с.
+    На hh.ru висят сторонние пиксели (skcrtxr.com, weborama), которые 12.10.2026
+    не отвечали вовсе: событие load приходило через 46 с, а с VPN — никогда,
+    и вход падал с «Timeout 60000ms exceeded». Ждём только DOM: форма уже
+    на месте, а в ручном режиме дальше ждёт сам человек.
+    Заодно с VPN окно больше не закрывается молча — человек видит страницу
+    hh.ru «VPN мешает работе сайта».
+    """
+    from playwright.async_api import Page
+
+    if getattr(Page, "_hh_goto_patched", False):
+        return
+
+    orig_goto = Page.goto
+
+    async def goto(self, url, **kwargs):
+        if "/oauth/authorize" in str(url) and kwargs.get("wait_until") in (None, "load"):
+            kwargs["wait_until"] = AUTH_WAIT_UNTIL
+        return await orig_goto(self, url, **kwargs)
+
+    Page.goto = goto
+    Page._hh_goto_patched = True
+    logger.debug("hh_patch: страница входа ждёт %s", AUTH_WAIT_UNTIL)
+
+
+# ------------------------------------------------------------ капча руками
+
+# Сколько ждать, пока человек введёт капчу, секунды.
+CAPTCHA_WAIT_S = 600
+_CAPTCHA_PATH = "/account/captcha"
+
+
+def _has_captcha_ai(tool) -> bool:
+    section = (tool.config.get("openai_captcha") or {}) if tool.config else {}
+    return bool(section.get("api_key") and section.get("base_url"))
+
+
+def _hh_cookies_for_browser(tool) -> list[dict]:
+    """Веб-куки hh.ru из сессии движка — чтобы капча открылась под аккаунтом."""
+    out = []
+    try:
+        for c in tool.session.cookies:
+            if "hh.ru" not in (c.domain or ""):
+                continue
+            out.append({"name": c.name, "value": c.value, "domain": c.domain,
+                        "path": c.path or "/", "secure": bool(c.secure)})
+    except Exception:
+        logger.debug("hh_patch: куки для окна капчи не прочитались", exc_info=True)
+    return out
+
+
+async def _manual_captcha(op, captcha_url: str) -> bool:
+    """Показывает капчу в окне браузера и ждёт, пока человек её введёт.
+
+    Успех — страница ушла с /account/captcha (hh принял ответ). Неверный ответ
+    hh показывает новой картинкой на том же адресе — ждём дальше. Закрыли окно
+    или вышло время — False, движок завершит прогон как раньше.
+    """
+    import asyncio
+    from playwright.async_api import async_playwright
+
+    tool = op.tool
+    args = []
+    proxy_url = (tool.api_client.proxies or {}).get("https")
+    if proxy_url:
+        args.append(f"--proxy-server={proxy_url}")
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=False, args=args)
+        try:
+            context = await browser.new_context()
+            cookies = _hh_cookies_for_browser(tool)
+            if cookies:
+                try:
+                    await context.add_cookies(cookies)
+                except Exception:
+                    logger.debug("hh_patch: куки в окно капчи не легли", exc_info=True)
+            page = await context.new_page()
+            closed = asyncio.Event()
+            page.on("close", lambda _: closed.set())
+            browser.on("disconnected", lambda _: closed.set())
+
+            await page.goto(captcha_url, timeout=60000, wait_until=AUTH_WAIT_UNTIL)
+            logger.warning("🧩 Введите капчу в открывшемся окне hh.ru — рассылка ждёт")
+
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + CAPTCHA_WAIT_S
+            while loop.time() < deadline:
+                if closed.is_set():
+                    logger.warning("Окно капчи закрыто, капча не пройдена")
+                    return False
+                if _CAPTCHA_PATH not in page.url:
+                    try:
+                        await page.wait_for_load_state(AUTH_WAIT_UNTIL, timeout=10000)
+                    except Exception:
+                        pass
+                    for c in await context.cookies():
+                        tool.session.cookies.set(c["name"], c["value"],
+                                                 domain=c.get("domain", ""),
+                                                 path=c.get("path", "/"))
+                    logger.info("Капча пройдена, продолжаю рассылку")
+                    return True
+                await asyncio.sleep(0.5)
+            logger.warning("Капчу не ввели за %s мин", CAPTCHA_WAIT_S // 60)
+            return False
+        finally:
+            try:
+                await browser.close()
+            except Exception:
+                pass
+
+
+def patch_manual_captcha() -> None:
+    """Патч 8 — капча при отклике вводится руками в окне.
+
+    Штатно движок решает капчу только через OpenAI (секция openai_captcha);
+    без ключа он падает «API-ключ не задан», и прогон заканчивается ошибкой.
+    12.10.2026 так оборвалась рассылка на 15-м отклике. Если ключ задан —
+    оставляем штатный путь, иначе показываем капчу человеку.
+    """
+    from hh_applicant_tool.operations import apply_vacancies as av
+
+    op_cls = av.Operation
+    if getattr(op_cls, "_hh_captcha_patched", False):
+        return
+
+    orig_solve = op_cls._solve_captcha_async
+
+    async def solve(self, captcha_url: str) -> bool:
+        if _has_captcha_ai(self.tool):
+            return await orig_solve(self, captcha_url)
+        return await _manual_captcha(self, captcha_url)
+
+    op_cls._solve_captcha_async = solve
+    op_cls._hh_captcha_patched = True
+    logger.debug("hh_patch: капча руками включена")

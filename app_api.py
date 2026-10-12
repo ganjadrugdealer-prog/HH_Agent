@@ -117,6 +117,20 @@ def browser_progress_line(line: str) -> str:
     return line[:200]
 
 
+AUTH_TIMEOUT_TEXT = (
+    "hh.ru не открылся за минуту. Проверьте интернет. Если включён VPN — "
+    "отключите его или добавьте hh.ru в исключения: с зарубежных адресов "
+    "hh.ru вместо входа показывает страницу «VPN мешает работе сайта»."
+)
+
+
+def auth_error_text(message: str) -> str:
+    """Сырой таймаут playwright («Timeout 60000ms exceeded… Call log…») → понятный текст."""
+    if "Timeout" in (message or "") and "exceeded" in message:
+        return AUTH_TIMEOUT_TEXT
+    return message
+
+
 class AppApi(Api):
     """Штатный Api + всё, что нужно мастеру первого запуска."""
 
@@ -404,6 +418,12 @@ class AppApi(Api):
             self._window.evaluate_js(f"{fn}({payload})")
         except Exception:
             pass
+
+    def _send_auth_event(self, event: str, message: str = "") -> None:
+        """Ошибку входа по таймауту переводим на человеческий язык."""
+        if event == "error":
+            message = auth_error_text(message)
+        super()._send_auth_event(event, message)
 
     def ui_ready(self, page: str, info: str = "") -> dict[str, str]:
         """Страница сообщает, что отрисовалась. Нужно для диагностики сборки."""

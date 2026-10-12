@@ -43,6 +43,7 @@ agents/
 docs/
 .env.example
 tools/fix_ui.py
+tools/dev_ru_tunnel.ps1
 
 # Старая рабочая копия проекта на Windows (вложенный клон со своим .git, .venv и dist)
 src/

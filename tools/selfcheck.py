@@ -467,6 +467,85 @@ def t_hh_patch_applies():
     assert getattr(BaseClient, "_hh_delay_patched", False), "пауза не пропатчена"
     assert getattr(rm, "_hh_ping_patched", False), "пинги не пропатчены"
     assert getattr(BaseModel, "_hh_types_patched", False), "sqlite-типы не пропатчены"
+    from playwright.async_api import Page
+    assert getattr(Page, "_hh_goto_patched", False), "страница входа не пропатчена"
+    assert getattr(av.Operation, "_hh_captcha_patched", False), "капча не пропатчена"
+
+
+def t_hh_patch_auth_page_load():
+    """Страница входа ждёт DOM, а не load; прочие переходы не трогаем."""
+    import asyncio
+    import hh_patch
+    from playwright.async_api import Page
+    saved = Page.goto, getattr(Page, "_hh_goto_patched", False)
+    calls = []
+
+    async def fake_goto(self, url, **kwargs):
+        calls.append((url, kwargs.get("wait_until")))
+
+    try:
+        Page.goto, Page._hh_goto_patched = fake_goto, False
+        hh_patch.patch_auth_page_load()
+        page = object.__new__(Page)
+        auth = "https://hh.ru/oauth/authorize?client_id=X&response_type=code"
+        asyncio.run(Page.goto(page, auth, timeout=60000, wait_until="load"))
+        asyncio.run(Page.goto(page, auth))
+        asyncio.run(Page.goto(page, auth, wait_until="networkidle"))
+        asyncio.run(Page.goto(page, "https://hh.ru/", wait_until="load"))
+    finally:
+        Page.goto, Page._hh_goto_patched = saved
+    assert calls == [(auth, "domcontentloaded"), (auth, "domcontentloaded"),
+                     (auth, "networkidle"), ("https://hh.ru/", "load")], calls
+
+
+def t_hh_patch_manual_captcha():
+    """Без ключа OpenAI капча идёт в окно, с ключом — штатным решателем."""
+    import asyncio
+    import hh_patch
+    from hh_applicant_tool.operations import apply_vacancies as av
+    from http.cookiejar import Cookie
+    from requests.cookies import RequestsCookieJar
+
+    cls = av.Operation
+    saved = (cls._solve_captcha_async, getattr(cls, "_hh_captcha_patched", False),
+             hh_patch._manual_captcha)
+    calls = []
+
+    async def fake_orig(self, url):
+        calls.append(("ai", url))
+        return True
+
+    async def fake_manual(op, url):
+        calls.append(("manual", url))
+        return True
+
+    class Tool:
+        config = {}
+
+    try:
+        cls._solve_captcha_async, cls._hh_captcha_patched = fake_orig, False
+        hh_patch._manual_captcha = fake_manual
+        hh_patch.patch_manual_captcha()
+        op = object.__new__(cls)
+        op.tool = Tool()
+        asyncio.run(cls._solve_captcha_async(op, "u1"))
+        Tool.config = {"openai_captcha": {"api_key": "k", "base_url": "http://x"}}
+        asyncio.run(cls._solve_captcha_async(op, "u2"))
+        Tool.config = {"openai_captcha": {"api_key": "k"}}   # без base_url штатный упадёт
+        asyncio.run(cls._solve_captcha_async(op, "u3"))
+    finally:
+        cls._solve_captcha_async, cls._hh_captcha_patched, hh_patch._manual_captcha = saved
+    assert calls == [("manual", "u1"), ("ai", "u2"), ("manual", "u3")], calls
+
+    jar = RequestsCookieJar()
+    for name, domain in (("hhtoken", ".hh.ru"), ("other", "example.com")):
+        jar.set_cookie(Cookie(0, name, "v", None, False, domain, True, domain.startswith("."),
+                              "/", True, True, None, False, None, None, {}))
+
+    class T:
+        session = type("S", (), {"cookies": jar})()
+    got = hh_patch._hh_cookies_for_browser(T())
+    assert [c["name"] for c in got] == ["hhtoken"], got
 
 
 def t_hh_patch_excluded_by_name():
@@ -1326,6 +1405,17 @@ def t_browser_progress_line():
     assert app_api.browser_progress_line(half) == "Скачиваю: 50% из 187.7 MiB"
     plain = "Chrome for Testing 145.0 downloaded to /x"
     assert app_api.browser_progress_line(plain) == plain
+
+
+def t_auth_error_text():
+    """Таймаут playwright при входе — понятным текстом, прочие ошибки как есть."""
+    import app_api
+    raw = ('Ошибка авторизации: : Timeout 60000ms exceeded.\nCall log:\n'
+           '  - navigating to "https://hh.ru/oauth/authorize?client_id=X", waiting until "load"')
+    assert app_api.auth_error_text(raw) == app_api.AUTH_TIMEOUT_TEXT
+    other = "Ошибка авторизации: invalid_grant"
+    assert app_api.auth_error_text(other) == other
+    assert app_api.auth_error_text("") == ""
 
 
 def t_restart_resets_pyinstaller_env():
