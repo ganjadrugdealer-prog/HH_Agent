@@ -432,6 +432,38 @@ def t_core_manager_install(tmpenv=True):
                 os.environ["APPDATA"] = old[0]
 
 
+def t_core_manager_fallback_version():
+    """Манифест недоступен — ставим проверенную версию, а не последнюю с PyPI."""
+    import core_manager
+    import engine
+    assert core_manager.FALLBACK_CORE_VERSION == engine.ENGINE_EXPECTED
+    picked = []
+
+    class Stop(Exception):
+        pass
+
+    def pick(files):
+        picked.append(files)
+        raise Stop
+
+    saved = (core_manager.get_approved_version, core_manager._fetch_pypi,
+             core_manager._pick_artifact)
+    try:
+        core_manager.get_approved_version = lambda: None
+        core_manager._fetch_pypi = lambda: {
+            "info": {"version": "2.0.8"},
+            "releases": {"2.0.8": ["new"], core_manager.FALLBACK_CORE_VERSION: ["old"]}}
+        core_manager._pick_artifact = pick
+        try:
+            core_manager.install_core()
+        except Stop:
+            pass
+    finally:
+        (core_manager.get_approved_version, core_manager._fetch_pypi,
+         core_manager._pick_artifact) = saved
+    assert picked == [["old"]], picked
+
+
 def t_core_manager_sdist():
     """sdist распаковывается без первого каталога и ничего не теряет."""
     import tarfile

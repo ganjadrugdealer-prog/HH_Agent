@@ -25,6 +25,10 @@ REMOTE_CONFIG_URL = (
 )
 PYPI_URL = "https://pypi.org/pypi/hh-applicant-tool/json"
 PACKAGE_DIR = "hh_applicant_tool"
+# Версия ядра, под которую написано приложение (= engine.ENGINE_EXPECTED).
+# Ставится, если remote_config.json недоступен. Брать «последнюю с PyPI» нельзя:
+# с 2.x движок несовместим, а raw.githubusercontent.com из РФ часто не отвечает.
+FALLBACK_CORE_VERSION = "1.8.28"
 REINSTALL_MARKER = "reinstall.flag"
 
 
@@ -222,7 +226,8 @@ def install_core(progress_callback=None, target_version: str | None = None) -> s
     data = _fetch_pypi()
 
     if not target_version:
-        target_version = data["info"]["version"]
+        say(f"Манифест недоступен, ставлю проверенную версию {FALLBACK_CORE_VERSION}")
+        target_version = FALLBACK_CORE_VERSION
     if target_version not in data.get("releases", {}):
         raise RuntimeError(f"Версия {target_version} не найдена на PyPI.")
 
