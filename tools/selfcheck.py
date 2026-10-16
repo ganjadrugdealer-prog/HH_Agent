@@ -657,7 +657,8 @@ def t_hh_patch_auth_page_load():
 
 
 def t_hh_patch_manual_captcha():
-    """Капча ловится в клиенте API: окно, пауза, повтор; закрыли окно — ошибка."""
+    """Капча ловится в клиенте API только в потоке рассылки: решили — повтор."""
+    import threading
     import hh_patch
     from hh_applicant_tool.api import errors
     from hh_applicant_tool.api.client import ApiClient, BaseClient
@@ -678,52 +679,110 @@ def t_hh_patch_manual_captcha():
             raise errors.CaptchaRequired(Resp(), data)
         return result
 
-    async def fake_manual(url, proxy_url=None):
+    async def fake_solve(url):
         windows.append(url)
         return solved.pop(0)
 
+    def expect_captcha(client):
+        try:
+            client.post("/negotiations", {})
+        except errors.CaptchaRequired:
+            return
+        raise AssertionError("ждали CaptchaRequired")
+
     hh_patch.patch_manual_captcha()
     assert getattr(ApiClient, "_hh_captcha_patched", False)
-    saved = BaseClient.request, hh_patch._manual_captcha, hh_patch.CAPTCHA_COOLDOWN_S
+    saved = BaseClient.request, hh_patch.CAPTCHA_COOLDOWN_S
     try:
         BaseClient.request = fake_base
-        hh_patch._manual_captcha = fake_manual
         hh_patch.CAPTCHA_COOLDOWN_S = 0
         client = ApiClient(access_token="USERx")
 
+        # вне рассылки перехвата нет: ошибка сразу, окна нет
+        answers[:] = ["captcha"]
+        expect_captcha(client)
+        assert windows == [], windows
+
+        client._hh_captcha = (threading.get_ident(), fake_solve)
+
         # капча, решили, повтор, снова капча, решили, повтор — успех
+        base_calls.clear()
         answers[:], solved[:] = ["captcha", "captcha", {}], [True, True]
         assert client.post("/negotiations", {"vacancy_id": 1}) == {}
         assert base_calls == ["/negotiations"] * 3, base_calls
         assert windows == ["https://hh.ru/account/captcha?state=S"] * 2, windows
 
-        # окно закрыли — ошибка уходит наверх, без повтора
+        # не решили — ошибка уходит наверх, без повтора
         base_calls.clear()
         answers[:], solved[:] = ["captcha"], [False]
-        try:
-            client.post("/negotiations", {})
-            raise AssertionError("закрытое окно должно отдать CaptchaRequired")
-        except errors.CaptchaRequired:
-            pass
+        expect_captcha(client)
         assert base_calls == ["/negotiations"], base_calls
 
-        # с ключом OpenAI (флаг снят) окна нет, ошибка сразу уходит в движок
-        base_calls.clear()
+        # больше MAX_CAPTCHA_ROUNDS капч подряд — сдаёмся
+        n = hh_patch.MAX_CAPTCHA_ROUNDS
+        answers[:], solved[:] = ["captcha"] * (n + 1), [True] * n
+        expect_captcha(client)
+
+        # запрос из другого потока (интерфейс, Telegram) окно не открывает
         windows.clear()
-        client._hh_manual_captcha = False
         answers[:] = ["captcha"]
-        try:
-            client.post("/negotiations", {})
-            raise AssertionError("без ручного режима ждём CaptchaRequired")
-        except errors.CaptchaRequired:
-            pass
+        errs = []
+        t = threading.Thread(target=lambda: errs.append(
+            _catch(lambda: client.post("/negotiations", {}))))
+        t.start()
+        t.join()
+        assert isinstance(errs[0], errors.CaptchaRequired), errs
         assert windows == [], windows
     finally:
-        BaseClient.request, hh_patch._manual_captcha, hh_patch.CAPTCHA_COOLDOWN_S = saved
+        BaseClient.request, hh_patch.CAPTCHA_COOLDOWN_S = saved
+
+
+def _catch(fn):
+    try:
+        fn()
+    except Exception as ex:
+        return ex
+    return None
+
+
+def t_hh_patch_captcha_solver():
+    """С полным ключом OpenAI — штатный решатель, без base_url — окно."""
+    import asyncio
+    import hh_patch
+    calls = []
+
+    async def ai_solve(op, url):
+        calls.append(("ai", url))
+        return True
+
+    async def fake_manual(url, proxy_url=None, cancel=None):
+        calls.append(("manual", url, proxy_url, cancel))
+        return True
+
+    class Client:
+        proxies = {"https": "socks5://p"}
+
+    class Op:
+        _cancel_event = "ev"
+
+    class Tool:
+        api_client = Client()
+
+    saved = hh_patch._manual_captcha
+    try:
+        hh_patch._manual_captcha = fake_manual
+        for config in ({}, {"openai_captcha": {"api_key": "k", "base_url": "http://x"}},
+                       {"openai_captcha": {"api_key": "k"}}):
+            Tool.config = config
+            asyncio.run(hh_patch._captcha_solver(Op(), Tool(), ai_solve)("u"))
+    finally:
+        hh_patch._manual_captcha = saved
+    assert calls == [("manual", "u", "socks5://p", "ev"), ("ai", "u"),
+                     ("manual", "u", "socks5://p", "ev")], calls
 
 
 def t_hh_patch_captcha_url():
-    """Ссылка на капчу — с backurl приложения; 302 на /account/captcha — принята."""
+    """Ссылка на капчу — с backurl приложения; принята — только 302 на backurl."""
     import hh_patch
     from urllib.parse import parse_qs, urlsplit
     url = hh_patch._captcha_page_url(
@@ -732,10 +791,14 @@ def t_hh_patch_captcha_url():
     assert q == {"state": ["abc"], "lang": ["RU"],
                  "backurl": [hh_patch.CAPTCHA_SUCCESS_BACKURL]}, q
     ok = hh_patch._is_captcha_accepted
-    assert ok("POST", "https://hh.ru/account/captcha?captchaText=x", 302)
-    assert not ok("POST", "https://hh.ru/account/captcha", 403)
-    assert not ok("GET", "https://hh.ru/account/captcha", 302)
-    assert not ok("POST", "https://hh.ru/captcha?lang=RU", 302)
+    back = hh_patch.CAPTCHA_SUCCESS_BACKURL
+    assert ok("POST", "https://hh.ru/account/captcha?captchaText=x", 302, back)
+    # неверный ответ формой: 302 обратно на failurl
+    assert not ok("POST", "https://hh.ru/account/captcha", 302,
+                  "/account/captcha?state=abc&backurl=" + back)
+    assert not ok("POST", "https://hh.ru/account/captcha", 403, "")
+    assert not ok("GET", "https://hh.ru/account/captcha", 302, back)
+    assert not ok("POST", "https://hh.ru/captcha?lang=RU", 302, back)
 
 
 def t_hh_patch_excluded_by_name():

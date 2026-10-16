@@ -396,10 +396,6 @@ ANDROID_WEBVIEW_USERAGENT = (
     "Chrome/118.0.0.0 Mobile Safari/537.36"
 )
 
-# Два окна капчи одновременно не нужны: запросы идут из разных потоков.
-_captcha_lock = threading.Lock()
-
-
 def _has_captcha_ai(tool) -> bool:
     section = (tool.config.get("openai_captcha") or {}) if tool.config else {}
     return bool(section.get("api_key") and section.get("base_url"))
@@ -414,18 +410,24 @@ def _captcha_page_url(captcha_url: str) -> str:
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
-def _is_captcha_accepted(method: str, url: str, status: int) -> bool:
-    """Ответ на отправку капчи: 302 на backurl — принята, 403 — неверно."""
+def _is_captcha_accepted(method: str, url: str, status: int, location: str) -> bool:
+    """Ответ на отправку капчи: 302 на backurl — принята.
+
+    Неверный ответ — 403, а при отправке формой — 302 обратно на failurl
+    (/account/captcha?state=...), поэтому смотрим, куда ведёт редирект.
+    """
     return (method == "POST" and urlsplit(url).path == _CAPTCHA_PATH
-            and status == 302)
+            and status == 302 and location.startswith(CAPTCHA_SUCCESS_BACKURL))
 
 
-async def _manual_captcha(captcha_url: str, proxy_url: str | None = None) -> bool:
+async def _manual_captcha(captcha_url: str, proxy_url: str | None = None,
+                          cancel=None) -> bool:
     """Показывает капчу в окне браузера и ждёт, пока человек её введёт.
 
-    Успех — POST на /account/captcha вернул 302 (так проверяет 2.x), либо
-    страница ушла на backurl. Неверный ответ hh показывает новой картинкой на
-    том же адресе — ждём дальше. Закрыли окно или вышло время — False.
+    Успех — POST на /account/captcha вернул 302 на backurl (так проверяет
+    2.x), запрос ушёл на backurl или страница ушла с /account/captcha.
+    Неверный ответ hh показывает новой картинкой на том же адресе — ждём
+    дальше. Закрыли окно, остановили рассылку или вышло время — False.
     """
     import asyncio
     from playwright.async_api import async_playwright
@@ -446,7 +448,8 @@ async def _manual_captcha(captcha_url: str, proxy_url: str | None = None) -> boo
 
             def on_response(response) -> None:
                 if _is_captcha_accepted(response.request.method, response.url,
-                                        response.status):
+                                        response.status,
+                                        response.headers.get("location", "")):
                     accepted.set()
 
             def on_request(request) -> None:
@@ -463,11 +466,14 @@ async def _manual_captcha(captcha_url: str, proxy_url: str | None = None) -> boo
             loop = asyncio.get_running_loop()
             deadline = loop.time() + CAPTCHA_WAIT_S
             while loop.time() < deadline:
-                if accepted.is_set():
+                if accepted.is_set() or _CAPTCHA_PATH not in page.url:
                     logger.info("Капча пройдена, продолжаю рассылку")
                     return True
                 if closed.is_set():
                     logger.warning("Окно капчи закрыто, капча не пройдена")
+                    return False
+                if cancel is not None and cancel.is_set():
+                    logger.warning("Рассылку остановили, окно капчи закрываю")
                     return False
                 await asyncio.sleep(0.5)
             logger.warning("Капчу не ввели за %s мин", CAPTCHA_WAIT_S // 60)
@@ -479,17 +485,27 @@ async def _manual_captcha(captcha_url: str, proxy_url: str | None = None) -> boo
                 pass
 
 
+def _captcha_solver(op, tool, ai_solve):
+    """Чем решать капчу в прогоне откликов: штатным AI-решателем или окном."""
+    if _has_captcha_ai(tool):
+        return lambda url: ai_solve(op, url)
+    proxy_url = (tool.api_client.proxies or {}).get("https")
+    cancel = getattr(op, "_cancel_event", None)
+    return lambda url: _manual_captcha(url, proxy_url, cancel)
+
+
 def patch_manual_captcha() -> None:
-    """Патч 8 — капча ловится в клиенте API и вводится руками в окне.
+    """Патч 8 — капча ловится в клиенте API на время рассылки откликов.
 
-    Как в 2.x: CaptchaRequired на любом запросе -> окно с капчей -> пауза ->
-    тот же запрос заново, до MAX_CAPTCHA_ROUNDS капч подряд. Штатно 1.8.28
-    ловил капчу только при отклике, повторял его один раз и на второй капче
-    подряд обрывал прогон.
+    Как в 2.x: CaptchaRequired на любом запросе -> решаем -> пауза -> тот же
+    запрос заново, до MAX_CAPTCHA_ROUNDS капч подряд. Штатно 1.8.28 ловил
+    капчу только при отклике, повторял его один раз и на второй капче подряд
+    обрывал прогон. Решает штатный AI-решатель, если задан ключ OpenAI,
+    иначе человек в окне.
 
-    Если задан ключ OpenAI, рассылка решает капчу штатно: перед прогоном
-    откликов клиенту ставится _hh_manual_captcha = False, и ошибка уходит
-    в движок, как раньше.
+    Перехват включён только в потоке, где идёт рассылка: запросы интерфейса
+    и Telegram-бота, пинги и поднятие резюме падают на капче сразу, как
+    раньше, а не вешают поток на окне.
     """
     import asyncio
     import time
@@ -502,44 +518,39 @@ def patch_manual_captcha() -> None:
         return
 
     orig_request = ApiClient.request
+    orig_run = av.Operation.run
+    ai_solve = av.Operation._solve_captcha_async
 
     def request(self, *args, **kwargs):
         for _ in range(MAX_CAPTCHA_ROUNDS):
             try:
                 return orig_request(self, *args, **kwargs)
             except errors.CaptchaRequired as ex:
-                if not self._hh_manual_captcha:
+                armed = self._hh_captcha
+                if not armed or armed[0] != threading.get_ident():
                     raise
                 logger.warning("Требуется капча: %s", ex.captcha_url)
-                with _captcha_lock:
-                    solved = asyncio.run(_manual_captcha(
-                        ex.captcha_url, (self.proxies or {}).get("https")))
-                if not solved:
+                if not asyncio.run(armed[1](ex.captcha_url)):
                     raise
                 time.sleep(CAPTCHA_COOLDOWN_S)
         return orig_request(self, *args, **kwargs)
 
-    orig_run = av.Operation.run
-
     def run(self, tool, *args, **kwargs):
-        tool.api_client._hh_manual_captcha = not _has_captcha_ai(tool)
+        tool.api_client._hh_captcha = (threading.get_ident(),
+                                       _captcha_solver(self, tool, ai_solve))
         try:
             return orig_run(self, tool, *args, **kwargs)
         finally:
-            tool.api_client.__dict__.pop("_hh_manual_captcha", None)
-
-    orig_solve = av.Operation._solve_captcha_async
+            tool.api_client.__dict__.pop("_hh_captcha", None)
 
     async def solve(self, captcha_url: str) -> bool:
-        # Сюда капча доходит, только если окно уже закрыли или ввели не то:
-        # штатный решатель без ключа упал бы с «API-ключ не задан».
-        if _has_captcha_ai(self.tool):
-            return await orig_solve(self, captcha_url)
+        # Сюда капча доходит, только когда перехват уже сдался: окно закрыли,
+        # вышло время или капч было больше MAX_CAPTCHA_ROUNDS подряд.
         return False
 
-    ApiClient._hh_manual_captcha = True
+    ApiClient._hh_captcha = None
     ApiClient.request = request
     av.Operation.run = run
     av.Operation._solve_captcha_async = solve
     ApiClient._hh_captcha_patched = True
-    logger.debug("hh_patch: капча руками включена")
+    logger.debug("hh_patch: перехват капчи включён")
