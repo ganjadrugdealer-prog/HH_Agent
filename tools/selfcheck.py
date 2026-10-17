@@ -626,7 +626,8 @@ def t_hh_patch_applies():
     assert getattr(BaseModel, "_hh_types_patched", False), "sqlite-типы не пропатчены"
     from playwright.async_api import Page
     assert getattr(Page, "_hh_goto_patched", False), "страница входа не пропатчена"
-    assert getattr(av.Operation, "_hh_captcha_patched", False), "капча не пропатчена"
+    from hh_applicant_tool.api.client import ApiClient
+    assert getattr(ApiClient, "_hh_captcha_patched", False), "капча не пропатчена"
 
 
 def t_hh_patch_auth_page_load():
@@ -655,54 +656,185 @@ def t_hh_patch_auth_page_load():
                      (auth, "networkidle"), ("https://hh.ru/", "load")], calls
 
 
-def t_hh_patch_manual_captcha():
-    """Без ключа OpenAI капча идёт в окно, с ключом — штатным решателем."""
-    import asyncio
+def _captcha_fixture():
+    """Клиент API без сети: BaseClient.request отдаёт ответы из answers."""
     import hh_patch
-    from hh_applicant_tool.operations import apply_vacancies as av
-    from http.cookiejar import Cookie
-    from requests.cookies import RequestsCookieJar
+    from hh_applicant_tool.api import errors
+    from hh_applicant_tool.api.client import ApiClient, BaseClient
 
-    cls = av.Operation
-    saved = (cls._solve_captcha_async, getattr(cls, "_hh_captcha_patched", False),
-             hh_patch._manual_captcha)
-    calls = []
+    class Resp:
+        status_code = 403
 
-    async def fake_orig(self, url):
-        calls.append(("ai", url))
-        return True
+    data = {"errors": [{"value": "captcha_required",
+                        "captcha_url": "https://hh.ru/account/captcha?state=S"}]}
+    st = {"answers": [], "solved": [], "base_calls": [], "windows": []}
 
-    async def fake_manual(op, url):
-        calls.append(("manual", url))
-        return True
+    # Штатный ApiClient.request зовёт BaseClient.request — его и подменяем.
+    def fake_base(self, method, endpoint, *a, **kw):
+        st["base_calls"].append(endpoint)
+        result = st["answers"].pop(0)
+        if result == "captcha":
+            raise errors.CaptchaRequired(Resp(), data)
+        return result
 
-    class Tool:
-        config = {}
+    async def fake_manual(url, session, proxy_url=None, cancel=None):
+        st["windows"].append(url)
+        result = st["solved"].pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    hh_patch.patch_manual_captcha()
+    assert getattr(ApiClient, "_hh_captcha_patched", False)
+    saved = BaseClient.request, hh_patch._manual_captcha, hh_patch.CAPTCHA_COOLDOWN_S
+    BaseClient.request = fake_base
+    hh_patch._manual_captcha = fake_manual
+    hh_patch.CAPTCHA_COOLDOWN_S = 0
+
+    def restore():
+        BaseClient.request, hh_patch._manual_captcha, hh_patch.CAPTCHA_COOLDOWN_S = saved
+
+    return ApiClient(access_token="USERx"), st, restore
+
+
+def t_hh_patch_manual_captcha():
+    """Капча ловится в клиенте API только в потоке рассылки: решили — повтор."""
+    import threading
+    import hh_patch
+    from hh_applicant_tool.api import errors
+
+    client, st, restore = _captcha_fixture()
+
+    def call():
+        try:
+            return client.post("/negotiations", {})
+        except errors.ApiError as ex:
+            return ex
 
     try:
-        cls._solve_captcha_async, cls._hh_captcha_patched = fake_orig, False
-        hh_patch._manual_captcha = fake_manual
-        hh_patch.patch_manual_captcha()
-        op = object.__new__(cls)
-        op.tool = Tool()
-        asyncio.run(cls._solve_captcha_async(op, "u1"))
-        Tool.config = {"openai_captcha": {"api_key": "k", "base_url": "http://x"}}
-        asyncio.run(cls._solve_captcha_async(op, "u2"))
-        Tool.config = {"openai_captcha": {"api_key": "k"}}   # без base_url штатный упадёт
-        asyncio.run(cls._solve_captcha_async(op, "u3"))
+        # вне рассылки перехвата нет: CaptchaRequired сразу, окна нет
+        st["answers"][:] = ["captcha"]
+        assert isinstance(call(), errors.CaptchaRequired)
+        assert st["windows"] == []
+
+        cancel = threading.Event()
+        client._hh_captcha = (threading.get_ident(), cancel)
+
+        # капча, решили, повтор, снова капча, решили, повтор — успех
+        st["answers"][:], st["solved"][:] = ["captcha", "captcha", {}], [True, True]
+        assert call() == {}
+        assert st["base_calls"][-3:] == ["/negotiations"] * 3
+        assert st["windows"] == ["https://hh.ru/account/captcha?state=S"] * 2
+        assert not cancel.is_set()
+
+        # больше MAX_CAPTCHA_ROUNDS капч подряд — сдаёмся и останавливаем рассылку
+        n = hh_patch.MAX_CAPTCHA_ROUNDS
+        st["answers"][:], st["solved"][:] = ["captcha"] * (n + 1), [True] * n
+        ex = call()
+        assert not isinstance(ex, errors.CaptchaRequired) and isinstance(ex, errors.ApiError), ex
+        assert "рассылка остановлена" in str(ex), str(ex)
+        assert cancel.is_set() and st["answers"] == []
+
+        # окно закрыли или оно не открылось — то же самое, без повтора
+        for result in (False, RuntimeError("no chromium")):
+            cancel.clear()
+            st["base_calls"].clear()
+            st["answers"][:], st["solved"][:] = ["captcha"], [result]
+            assert "рассылка остановлена" in str(call())
+            assert cancel.is_set() and st["base_calls"] == ["/negotiations"]
+
+        # после «Стопа» окно больше не открывается
+        st["windows"].clear()
+        st["answers"][:] = ["captcha"]
+        assert "рассылка остановлена" in str(call())
+        assert st["windows"] == []
+
+        # запрос из другого потока (интерфейс, Telegram) окно не открывает
+        cancel.clear()
+        st["answers"][:] = ["captcha"]
+        got = []
+        t = threading.Thread(target=lambda: got.append(call()))
+        t.start()
+        t.join()
+        assert isinstance(got[0], errors.CaptchaRequired), got
+        assert st["windows"] == []
     finally:
-        cls._solve_captcha_async, cls._hh_captcha_patched, hh_patch._manual_captcha = saved
-    assert calls == [("manual", "u1"), ("ai", "u2"), ("manual", "u3")], calls
+        restore()
 
-    jar = RequestsCookieJar()
-    for name, domain in (("hhtoken", ".hh.ru"), ("other", "example.com")):
-        jar.set_cookie(Cookie(0, name, "v", None, False, domain, True, domain.startswith("."),
-                              "/", True, True, None, False, None, None, {}))
 
-    class T:
-        session = type("S", (), {"cookies": jar})()
-    got = hh_patch._hh_cookies_for_browser(T())
-    assert [c["name"] for c in got] == ["hhtoken"], got
+def t_hh_patch_captcha_run():
+    """Перехват — только на время рассылки и только без полного ключа OpenAI."""
+    import threading
+    import engine
+    from hh_applicant_tool.api import errors
+    from hh_applicant_tool.operations import apply_vacancies as av
+
+    client, st, restore = _captcha_fixture()
+    _, parser = engine._parser_for("apply_vacancies")
+    seen = []
+
+    class Tool:
+        api_client = client
+
+    def make_op(body):
+        op = av.Operation()
+        op._cancel_event = threading.Event()
+        op._apply_vacancies = body
+        return op
+
+    try:
+        for config, armed in (({}, True),
+                              ({"openai_captcha": {"api_key": "k"}}, True),
+                              ({"openai_captcha": {"api_key": "k", "base_url": "u"}}, False)):
+            Tool.config = config
+            op = make_op(lambda: seen.append(client._hh_captcha is not None))
+            op.run(Tool(), parser.parse_args([]))
+            assert seen[-1] is armed, (config, seen)
+            assert client._hh_captcha is None, "перехват должен сняться после прогона"
+
+        # капча на поиске, окно закрыли: прогон заканчивается без исключения
+        Tool.config = {}
+        st["answers"][:], st["solved"][:] = ["captcha"], [False]
+        op = make_op(lambda: client.get("/vacancies"))
+        op.run(Tool(), parser.parse_args([]))
+        assert op._cancel_event.is_set()
+    finally:
+        restore()
+
+
+def t_hh_patch_captcha_accepted():
+    """Принята — 302 не на капчу или 203; 302 обратно на failurl и 403 — нет."""
+    import hh_patch
+    ok = hh_patch._is_captcha_accepted
+    assert ok("POST", "https://hh.ru/account/captcha?captchaText=x", 302, "/")
+    assert ok("POST", "https://hh.ru/account/captcha", 203, "")
+    assert not ok("POST", "https://hh.ru/account/captcha", 302,
+                  "/account/captcha?state=abc")
+    assert not ok("POST", "https://hh.ru/account/captcha", 403, "")
+    assert not ok("GET", "https://hh.ru/account/captcha", 302, "/")
+    assert not ok("POST", "https://hh.ru/captcha?lang=RU", 302, "/")
+
+
+def t_hh_patch_captcha_cookies():
+    """Куки сессии движка в окно и обратно — на настоящей HHOnlyCookieJar."""
+    import tempfile
+    import hh_patch
+    from hh_applicant_tool.main import HHOnlyCookieJar
+
+    class Session:
+        cookies = HHOnlyCookieJar(str(Path(tempfile.mkdtemp()) / "cookies.txt"))
+
+    s = Session()
+    # v1.2.5 падал здесь: у HHOnlyCookieJar нет .set
+    hh_patch._store_browser_cookies(s, [
+        {"name": "hhtoken", "value": "v1", "domain": ".hh.ru", "path": "/", "secure": True},
+        {"name": "other", "value": "x", "domain": "example.com", "path": "/"}])
+    got = {c["name"]: c["value"] for c in hh_patch._session_cookies_for_browser(s)}
+    assert got == {"hhtoken": "v1"}, got
+    hh_patch._store_browser_cookies(s, [
+        {"name": "hhtoken", "value": "v2", "domain": ".hh.ru", "path": "/"}])
+    got = {c["name"]: c["value"] for c in hh_patch._session_cookies_for_browser(s)}
+    assert got == {"hhtoken": "v2"}, got
 
 
 def t_hh_patch_excluded_by_name():
