@@ -677,7 +677,7 @@ def _captcha_fixture():
             raise errors.CaptchaRequired(Resp(), data)
         return result
 
-    async def fake_manual(url, proxy_url=None, cancel=None):
+    async def fake_manual(url, session, proxy_url=None, cancel=None):
         st["windows"].append(url)
         result = st["solved"].pop(0)
         if isinstance(result, Exception):
@@ -802,25 +802,39 @@ def t_hh_patch_captcha_run():
         restore()
 
 
-def t_hh_patch_captcha_url():
-    """Ссылка на капчу — с backurl приложения; принята — 302 на backurl или 203."""
+def t_hh_patch_captcha_accepted():
+    """Принята — 302 не на капчу или 203; 302 обратно на failurl и 403 — нет."""
     import hh_patch
-    from urllib.parse import parse_qs, urlsplit
-    url = hh_patch._captcha_page_url(
-        "https://hh.ru/account/captcha?state=abc&backurl=%2F&lang=RU")
-    q = parse_qs(urlsplit(url).query)
-    assert q == {"state": ["abc"], "lang": ["RU"],
-                 "backurl": [hh_patch.CAPTCHA_SUCCESS_BACKURL]}, q
     ok = hh_patch._is_captcha_accepted
-    back = hh_patch.CAPTCHA_SUCCESS_BACKURL
-    assert ok("POST", "https://hh.ru/account/captcha?captchaText=x", 302, back)
+    assert ok("POST", "https://hh.ru/account/captcha?captchaText=x", 302, "/")
     assert ok("POST", "https://hh.ru/account/captcha", 203, "")
-    # неверный ответ формой: 302 обратно на failurl
     assert not ok("POST", "https://hh.ru/account/captcha", 302,
-                  "/account/captcha?state=abc&backurl=" + back)
+                  "/account/captcha?state=abc")
     assert not ok("POST", "https://hh.ru/account/captcha", 403, "")
-    assert not ok("GET", "https://hh.ru/account/captcha", 302, back)
-    assert not ok("POST", "https://hh.ru/captcha?lang=RU", 302, back)
+    assert not ok("GET", "https://hh.ru/account/captcha", 302, "/")
+    assert not ok("POST", "https://hh.ru/captcha?lang=RU", 302, "/")
+
+
+def t_hh_patch_captcha_cookies():
+    """Куки сессии движка в окно и обратно — на настоящей HHOnlyCookieJar."""
+    import tempfile
+    import hh_patch
+    from hh_applicant_tool.main import HHOnlyCookieJar
+
+    class Session:
+        cookies = HHOnlyCookieJar(str(Path(tempfile.mkdtemp()) / "cookies.txt"))
+
+    s = Session()
+    # v1.2.5 падал здесь: у HHOnlyCookieJar нет .set
+    hh_patch._store_browser_cookies(s, [
+        {"name": "hhtoken", "value": "v1", "domain": ".hh.ru", "path": "/", "secure": True},
+        {"name": "other", "value": "x", "domain": "example.com", "path": "/"}])
+    got = {c["name"]: c["value"] for c in hh_patch._session_cookies_for_browser(s)}
+    assert got == {"hhtoken": "v1"}, got
+    hh_patch._store_browser_cookies(s, [
+        {"name": "hhtoken", "value": "v2", "domain": ".hh.ru", "path": "/"}])
+    got = {c["name"]: c["value"] for c in hh_patch._session_cookies_for_browser(s)}
+    assert got == {"hhtoken": "v2"}, got
 
 
 def t_hh_patch_excluded_by_name():

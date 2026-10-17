@@ -29,8 +29,8 @@
     один и тот же текст. Смотрим историю переписки и выбираем то, чего там ещё
     не было.
 
-Патч 8 — капча: перехват в клиенте API и окно для ввода руками, перенесено
-    из hh-applicant-tool 2.x (patch_manual_captcha). Рассылка ждёт и повторяет
+Патч 8 — капча: перехват в клиенте API (перенесён из hh-applicant-tool 2.x)
+    и окно для ввода руками (patch_manual_captcha). Рассылка ждёт и повторяет
     запрос; с ключом OpenAI капча при отклике решается штатно.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ import random
 import re
 import sys
 import threading
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("hh_applicant_tool")
 
@@ -374,12 +374,15 @@ def patch_auth_page_load() -> None:
 
 # ------------------------------------------------------------ капча руками
 #
-# Перенесено из hh-applicant-tool 2.x (tool.handle_captcha и перехват в
-# ApiClient.request). Ядро 1.8.28 открывало captcha_url как обычную страницу,
-# и hh мог не засчитать даже верный ответ: в 2.x страницу открывают так же,
-# как мобильное приложение, — чистая сессия, User-Agent Android WebView и
-# backurl на схему приложения. И ловят капчу в клиенте API на любом запросе,
-# повторяя его после решения, а не роняют прогон на второй капче подряд.
+# Из hh-applicant-tool 2.x перенесён перехват в ApiClient.request: капча
+# ловится на любом запросе рассылки, запрос повторяется после решения, а не
+# роняет прогон на второй капче подряд.
+#
+# Само окно — как раньше: обычный браузер с куками аккаунта. Способ 2.x
+# (чистая сессия, User-Agent Android WebView, backurl на hh://) в настоящем
+# браузере не работает: 17.10.2026 hh на живом аккаунте отвечал «Неверный
+# текст» на верно введённую капчу — UA Android не сходится с остальными
+# признаками десктопного Chromium. 2.x ходит через requests, где их нет.
 
 # Сколько ждать, пока человек введёт капчу, секунды.
 CAPTCHA_WAIT_S = 600
@@ -388,13 +391,6 @@ CAPTCHA_COOLDOWN_S = 5.0
 # Сколько капч подряд решаем на один запрос, прежде чем сдаться (как в 2.x).
 MAX_CAPTCHA_ROUNDS = 5
 _CAPTCHA_PATH = "/account/captcha"
-# Константы из hh_applicant_tool/constants.py версии 2.x.
-CAPTCHA_SUCCESS_BACKURL = "hh://applicant/captchaSuccessBackUrl"
-ANDROID_WEBVIEW_USERAGENT = (
-    "Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A.230901.001; wv) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
-    "Chrome/118.0.0.0 Mobile Safari/537.36"
-)
 
 
 def _has_captcha_ai(tool) -> bool:
@@ -402,36 +398,47 @@ def _has_captcha_ai(tool) -> bool:
     return bool(section.get("api_key") and section.get("base_url"))
 
 
-def _captcha_page_url(captcha_url: str) -> str:
-    """captcha_url из ответа API + backurl, как делает мобильное приложение."""
-    parts = urlsplit(captcha_url)
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
-             if k != "backurl"]
-    query.append(("backurl", CAPTCHA_SUCCESS_BACKURL))
-    return urlunsplit(parts._replace(query=urlencode(query)))
+def _session_cookies_for_browser(session) -> list[dict]:
+    """Веб-куки hh.ru из сессии движка — чтобы капча открылась под аккаунтом."""
+    return [{"name": c.name, "value": c.value, "domain": c.domain,
+             "path": c.path or "/", "secure": bool(c.secure)}
+            for c in session.cookies if "hh.ru" in (c.domain or "")]
+
+
+def _store_browser_cookies(session, cookies: list[dict]) -> None:
+    """Куки окна обратно в сессию движка.
+
+    Банка кук движка — HHOnlyCookieJar (http.cookiejar), у неё нет .set из
+    requests, только set_cookie: штатный код и v1.2.5 падали здесь с
+    «'HHOnlyCookieJar' object has no attribute 'set'» сразу после капчи.
+    """
+    from requests.cookies import create_cookie
+
+    for c in cookies:
+        session.cookies.set_cookie(create_cookie(
+            c["name"], c["value"], domain=c.get("domain", ""),
+            path=c.get("path", "/"), secure=bool(c.get("secure"))))
 
 
 def _is_captcha_accepted(method: str, url: str, status: int, location: str) -> bool:
-    """Ответ на отправку капчи: принята — 302 на backurl (так проверяет 2.x)
-    или 203, после которого страница сама уводит на backurl (README 2.x).
+    """Ответ на отправку капчи: 302 не на страницу капчи или 203 — принята.
 
     Неверный ответ — 403, а при отправке формой — 302 обратно на failurl
-    (/account/captcha?state=...), поэтому смотрим, куда ведёт редирект.
+    (/account/captcha?state=...).
     """
     if method != "POST" or urlsplit(url).path != _CAPTCHA_PATH:
         return False
-    return status == 203 or (
-        status == 302 and location.startswith(CAPTCHA_SUCCESS_BACKURL))
+    return status == 203 or (status == 302 and _CAPTCHA_PATH not in location)
 
 
-async def _manual_captcha(captcha_url: str, proxy_url: str | None = None,
+async def _manual_captcha(captcha_url: str, session, proxy_url: str | None = None,
                           cancel=None) -> bool:
     """Показывает капчу в окне браузера и ждёт, пока человек её введёт.
 
-    Успех определяем только по ответу на отправку (_is_captcha_accepted):
-    уход со страницы в чистой сессии ничего не значит — hh может увести на
-    вход. Неверный ответ hh показывает новой картинкой — ждём дальше.
-    Закрыли окно, остановили рассылку или вышло время — False.
+    Успех — hh принял ответ (_is_captcha_accepted) или страница ушла с
+    /account/captcha. Неверный ответ hh показывает новой картинкой на том же
+    адресе — ждём дальше. Закрыли окно, остановили рассылку или вышло
+    время — False. После успеха куки окна уходят в сессию движка.
     """
     import asyncio
     from playwright.async_api import async_playwright
@@ -441,9 +448,13 @@ async def _manual_captcha(captcha_url: str, proxy_url: str | None = None,
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=False, args=args)
         try:
-            # Чистая сессия без кук аккаунта: капча привязана к state в ссылке.
-            context = await browser.new_context(
-                user_agent=ANDROID_WEBVIEW_USERAGENT)
+            context = await browser.new_context()
+            cookies = _session_cookies_for_browser(session)
+            if cookies:
+                try:
+                    await context.add_cookies(cookies)
+                except Exception:
+                    logger.debug("hh_patch: куки в окно капчи не легли", exc_info=True)
             page = await context.new_page()
             closed = asyncio.Event()
             accepted = asyncio.Event()
@@ -451,21 +462,29 @@ async def _manual_captcha(captcha_url: str, proxy_url: str | None = None,
             browser.on("disconnected", lambda _: closed.set())
 
             def on_response(response) -> None:
-                if _is_captcha_accepted(response.request.method, response.url,
-                                        response.status,
-                                        response.headers.get("location", "")):
+                req = response.request
+                if req.method == "POST" and urlsplit(response.url).path == _CAPTCHA_PATH:
+                    # по журналу видно, принял hh ответ или отбил
+                    logger.info("hh ответил на капчу: %s", response.status)
+                location = response.headers.get("location", "")
+                if _is_captcha_accepted(req.method, response.url,
+                                        response.status, location):
                     accepted.set()
 
             page.on("response", on_response)
 
-            await page.goto(_captcha_page_url(captcha_url), timeout=60000,
-                            wait_until=AUTH_WAIT_UNTIL)
+            await page.goto(captcha_url, timeout=60000, wait_until=AUTH_WAIT_UNTIL)
             logger.warning("🧩 Введите капчу в открывшемся окне hh.ru — рассылка ждёт")
 
             loop = asyncio.get_running_loop()
             deadline = loop.time() + CAPTCHA_WAIT_S
             while loop.time() < deadline:
-                if accepted.is_set():
+                if accepted.is_set() or _CAPTCHA_PATH not in page.url:
+                    try:
+                        await page.wait_for_load_state(AUTH_WAIT_UNTIL, timeout=10000)
+                    except Exception:
+                        pass
+                    _store_browser_cookies(session, await context.cookies())
                     logger.info("Капча пройдена, продолжаю рассылку")
                     return True
                 if closed.is_set():
@@ -537,7 +556,7 @@ def patch_manual_captcha() -> None:
                 proxy_url = (self.proxies or {}).get("https")
                 try:
                     solved = asyncio.run(
-                        _manual_captcha(ex.captcha_url, proxy_url, cancel))
+                        _manual_captcha(ex.captcha_url, self.session, proxy_url, cancel))
                 except Exception:
                     logger.exception("Окно капчи не открылось")
                     solved = False
