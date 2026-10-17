@@ -23,6 +23,8 @@
 Патч 4 — случайная пауза между запросами к API.
     Штатно интервал фиксированный (DEFAULT_DELAY = 0.345), то есть запросы
     идут с машинной регулярностью. Заменяем на случайную величину из диапазона.
+    Там же пауза между самими откликами (patch_application_gap): на 6 откликах
+    за 25 секунд hh.ru требует капчу.
 
 Патч 5 — пинги не повторяются в рамках одного чата.
     Движок разворачивает шаблон случайно и может дважды прислать работодателю
@@ -39,6 +41,8 @@ import logging
 import random
 import re
 import sys
+import threading
+import time
 
 logger = logging.getLogger("hh_applicant_tool")
 
@@ -80,6 +84,7 @@ def apply_patches(memory_path=None) -> None:
         (patch_auth_page_load, "загрузка страницы входа"),
         (patch_manual_captcha, "капча руками"),
         (patch_api_delay, "случайная пауза"),
+        (patch_application_gap, "пауза между откликами"),
         (lambda: patch_ping_variety(memory_path), "разнообразие пингов"),
         (patch_sqlite_types, "безопасные типы sqlite"),
     ):
@@ -228,6 +233,86 @@ def patch_api_delay(low: float | None = None, high: float | None = None) -> None
     BaseClient.request = request
     BaseClient._hh_delay_patched = True
     logger.debug("hh_patch: пауза между запросами %.2f–%.2f с", lo, hi)
+
+
+# ------------------------------------------------- пауза между откликами
+
+# Пауза между откликами, секунды. 17.10.2026 hh.ru потребовал капчу после
+# 6 откликов за 25 секунд. ponytail: точного порога hh не публикует,
+# границы подбираются на практике; 200 откликов при ~30 с — около 1,5–2 часов.
+APPLICATION_GAP = (20.0, 45.0)
+
+# Событие отмены текущей рассылки — по потоку, где она идёт.
+_gap_local = threading.local()
+
+
+def patch_application_gap(low: float | None = None,
+                          high: float | None = None) -> None:
+    """Отклики (POST /negotiations) не чаще раза в APPLICATION_GAP секунд.
+
+    Штатная пауза перед откликом — 1–3 с, и это минимальный зазор от любого
+    предыдущего запроса, а перед откликом всегда идёт ещё GET работодателя,
+    так что отклики летят каждые 3–4 с. Ждём от конца прошлого отклика.
+
+    «Стоп» во время паузы: отклик не уходит, движок получает ApiError,
+    пишет его в журнал и на следующей вакансии видит отмену.
+    """
+    from hh_applicant_tool.api import errors
+    from hh_applicant_tool.api.client import BaseClient
+    from hh_applicant_tool.operations import apply_vacancies as av
+
+    if getattr(BaseClient, "_hh_gap_patched", False):
+        return
+
+    lo, hi = (low, high) if (low and high) else APPLICATION_GAP
+    if lo > hi:
+        lo, hi = hi, lo
+
+    class Cancelled(errors.ClientError):
+        def __init__(self) -> None:
+            super().__init__(None, {})
+
+        @property
+        def message(self) -> str:
+            return "Рассылку остановили, отклик не отправлен"
+
+    orig_request = BaseClient.request
+    orig_run = av.Operation.run
+    last = [0.0]
+
+    # Сигнатура как у BaseClient.request: патч 4 и ApiClient зовут позиционно.
+    def request(self, method, endpoint, params=None, delay=None,
+                as_json=False, **kwargs):
+        def send():
+            return orig_request(self, method, endpoint, params, delay,
+                                as_json, **kwargs)
+
+        if method != "POST" or endpoint != "/negotiations":
+            return send()
+        wait = last[0] + random.uniform(lo, hi) - time.monotonic()
+        if wait > 0:
+            logger.info("Пауза перед откликом %.0f с", wait)
+            cancel = getattr(_gap_local, "cancel", None)
+            if cancel is None:
+                time.sleep(wait)
+            elif cancel.wait(wait):
+                raise Cancelled()
+        try:
+            return send()
+        finally:
+            last[0] = time.monotonic()
+
+    def run(self, tool, *args, **kwargs):
+        _gap_local.cancel = getattr(self, "_cancel_event", None)
+        try:
+            return orig_run(self, tool, *args, **kwargs)
+        finally:
+            _gap_local.cancel = None
+
+    BaseClient.request = request
+    av.Operation.run = run
+    BaseClient._hh_gap_patched = True
+    logger.debug("hh_patch: пауза между откликами %.0f–%.0f с", lo, hi)
 
 
 # --------------------------------------------------------- пинги без повторов

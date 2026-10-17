@@ -622,6 +622,7 @@ def t_hh_patch_applies():
     from hh_applicant_tool.storage.models.base import BaseModel
     assert av.Operation._is_excluded is hh_patch._is_excluded_by_name
     assert getattr(BaseClient, "_hh_delay_patched", False), "пауза не пропатчена"
+    assert getattr(BaseClient, "_hh_gap_patched", False), "пауза между откликами не пропатчена"
     assert getattr(rm, "_hh_ping_patched", False), "пинги не пропатчены"
     assert getattr(BaseModel, "_hh_types_patched", False), "sqlite-типы не пропатчены"
     from playwright.async_api import Page
@@ -726,6 +727,56 @@ def t_hh_patch_sqlite_types():
     conn.execute("CREATE TABLE t (id INTEGER, name TEXT, type TEXT)")
     conn.execute("INSERT INTO t (id,name,type) VALUES (?,?,?)",
                  (row["id"], row["name"], row.get("type")))
+
+
+def t_hh_patch_application_gap():
+    """Между откликами — пауза; прочие запросы не ждут; «Стоп» — отклик не уходит."""
+    import hh_patch
+    from hh_applicant_tool.api import errors
+    from hh_applicant_tool.api.client import ApiClient
+
+    hh_patch.patch_application_gap()
+    sent, gaps = [], []
+
+    class Response:
+        status_code, text = 201, ""
+
+    class Session:                      # в сеть ничего не уходит
+        proxies = {}
+
+        def request(self, method, url, **kw):
+            sent.append((method, url.rsplit("/", 1)[-1]))
+            return Response()
+
+    class Cancel:
+        def __init__(self, stop):
+            self.stop = stop
+
+        def wait(self, s):
+            gaps.append(s)
+            return self.stop
+
+    saved = getattr(hh_patch._gap_local, "cancel", None)
+    client = ApiClient(access_token="USERx", session=Session(), delay=0.001)
+    try:
+        hh_patch._gap_local.cancel = Cancel(stop=False)
+        client.post("/negotiations", {})    # отметка времени последнего отклика
+        gaps.clear()
+        client.get("/employers/1")          # GET не ждёт
+        client.post("/negotiations", {})    # отклик сразу за откликом — ждёт
+        assert len(gaps) == 1 and 15 < gaps[0] <= 45, gaps
+
+        # «Стоп» во время паузы: ApiError, отклик не отправлен
+        sent.clear()
+        hh_patch._gap_local.cancel = Cancel(stop=True)
+        try:
+            client.post("/negotiations", {})
+            raise AssertionError("после «Стопа» ждём ApiError")
+        except errors.ApiError as ex:
+            assert "отклик не отправлен" in str(ex), str(ex)
+        assert sent == [], sent
+    finally:
+        hh_patch._gap_local.cancel = saved
 
 
 def t_hh_patch_delay_signature():
