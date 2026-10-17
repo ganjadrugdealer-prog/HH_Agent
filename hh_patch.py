@@ -244,18 +244,21 @@ APPLICATION_GAP = (20.0, 45.0)
 
 # Событие отмены текущей рассылки — по потоку, где она идёт.
 _gap_local = threading.local()
+# Когда и на что ушёл последний отклик.
+_gap_last = {"t": 0.0, "key": None}
 
 
-def patch_application_gap(low: float | None = None,
-                          high: float | None = None) -> None:
-    """Отклики (POST /negotiations) не чаще раза в APPLICATION_GAP секунд.
+def patch_application_gap() -> None:
+    """Отклики не чаще раза в APPLICATION_GAP секунд.
 
     Штатная пауза перед откликом — 1–3 с, и это минимальный зазор от любого
     предыдущего запроса, а перед откликом всегда идёт ещё GET работодателя,
-    так что отклики летят каждые 3–4 с. Ждём от конца прошлого отклика.
+    так что отклики летят каждые 3–4 с. Ждём от конца прошлого отклика —
+    и обычного (POST /negotiations в API), и с тестом (форма на сайте).
+    Повтор того же отклика — после капчи или обновления токена — не ждёт.
 
-    «Стоп» во время паузы: отклик не уходит, движок получает ApiError,
-    пишет его в журнал и на следующей вакансии видит отмену.
+    «Стоп» во время паузы: отклик не уходит, движок получает ошибку, пишет
+    её в журнал и на следующей вакансии видит отмену.
     """
     from hh_applicant_tool.api import errors
     from hh_applicant_tool.api.client import BaseClient
@@ -263,10 +266,6 @@ def patch_application_gap(low: float | None = None,
 
     if getattr(BaseClient, "_hh_gap_patched", False):
         return
-
-    lo, hi = (low, high) if (low and high) else APPLICATION_GAP
-    if lo > hi:
-        lo, hi = hi, lo
 
     class Cancelled(errors.ClientError):
         def __init__(self) -> None:
@@ -276,9 +275,24 @@ def patch_application_gap(low: float | None = None,
         def message(self) -> str:
             return "Рассылку остановили, отклик не отправлен"
 
+    def paced(key, send):
+        if key != _gap_last["key"]:
+            wait = _gap_last["t"] + random.uniform(*APPLICATION_GAP) - time.monotonic()
+            if wait > 0:
+                logger.info("Пауза перед откликом %.0f с", wait)
+                cancel = getattr(_gap_local, "cancel", None)
+                if cancel is None:
+                    time.sleep(wait)
+                elif cancel.wait(wait):
+                    raise Cancelled()
+        try:
+            return send()
+        finally:
+            _gap_last.update(t=time.monotonic(), key=key)
+
     orig_request = BaseClient.request
+    orig_test = av.Operation._solve_vacancy_test
     orig_run = av.Operation.run
-    last = [0.0]
 
     # Сигнатура как у BaseClient.request: патч 4 и ApiClient зовут позиционно.
     def request(self, method, endpoint, params=None, delay=None,
@@ -289,18 +303,12 @@ def patch_application_gap(low: float | None = None,
 
         if method != "POST" or endpoint != "/negotiations":
             return send()
-        wait = last[0] + random.uniform(lo, hi) - time.monotonic()
-        if wait > 0:
-            logger.info("Пауза перед откликом %.0f с", wait)
-            cancel = getattr(_gap_local, "cancel", None)
-            if cancel is None:
-                time.sleep(wait)
-            elif cancel.wait(wait):
-                raise Cancelled()
-        try:
-            return send()
-        finally:
-            last[0] = time.monotonic()
+        p = params or {}
+        return paced((p.get("vacancy_id"), p.get("resume_id")), send)
+
+    def solve_vacancy_test(self, vacancy_id, resume_hash, *args, **kwargs):
+        return paced((vacancy_id, resume_hash), lambda: orig_test(
+            self, vacancy_id, resume_hash, *args, **kwargs))
 
     def run(self, tool, *args, **kwargs):
         _gap_local.cancel = getattr(self, "_cancel_event", None)
@@ -310,9 +318,10 @@ def patch_application_gap(low: float | None = None,
             _gap_local.cancel = None
 
     BaseClient.request = request
+    av.Operation._solve_vacancy_test = solve_vacancy_test
     av.Operation.run = run
     BaseClient._hh_gap_patched = True
-    logger.debug("hh_patch: пауза между откликами %.0f–%.0f с", lo, hi)
+    logger.debug("hh_patch: пауза между откликами %.0f–%.0f с", *APPLICATION_GAP)
 
 
 # --------------------------------------------------------- пинги без повторов
