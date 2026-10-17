@@ -622,6 +622,7 @@ def t_hh_patch_applies():
     from hh_applicant_tool.storage.models.base import BaseModel
     assert av.Operation._is_excluded is hh_patch._is_excluded_by_name
     assert getattr(BaseClient, "_hh_delay_patched", False), "пауза не пропатчена"
+    assert getattr(BaseClient, "_hh_gap_patched", False), "пауза между откликами не пропатчена"
     assert getattr(rm, "_hh_ping_patched", False), "пинги не пропатчены"
     assert getattr(BaseModel, "_hh_types_patched", False), "sqlite-типы не пропатчены"
     from playwright.async_api import Page
@@ -726,6 +727,98 @@ def t_hh_patch_sqlite_types():
     conn.execute("CREATE TABLE t (id INTEGER, name TEXT, type TEXT)")
     conn.execute("INSERT INTO t (id,name,type) VALUES (?,?,?)",
                  (row["id"], row["name"], row.get("type")))
+
+
+def t_hh_patch_application_gap():
+    """Между откликами — пауза; повтор и прочие запросы не ждут; «Стоп» — не уходит."""
+    import hh_patch
+    from hh_applicant_tool.api import errors
+    from hh_applicant_tool.api.client import ApiClient
+    from hh_applicant_tool.operations import apply_vacancies as av
+
+    # через apply_patches: сломанный патч там глотается с предупреждением
+    hh_patch._applied = False
+    hh_patch.apply_patches()
+    sent, gaps = [], []
+
+    class Response:
+        status_code, text = 201, ""
+
+    class Session:                      # в сеть ничего не уходит
+        proxies = {}
+
+        def request(self, method, url, **kw):
+            sent.append((method, url.rsplit("/", 1)[-1]))
+            return Response()
+
+    class Cancel:
+        def __init__(self, stop):
+            self.stop = stop
+
+        def wait(self, s):
+            gaps.append(s)
+            return self.stop
+
+    def apply(vacancy_id):
+        return client.post("/negotiations", {"vacancy_id": vacancy_id, "resume_id": "r"})
+
+    saved = getattr(hh_patch._gap_local, "cancel", None), dict(hh_patch._gap_last)
+    client = ApiClient(access_token="USERx", session=Session(), delay=0.001)
+    try:
+        hh_patch._gap_local.cancel = Cancel(stop=False)
+        apply(1)                            # отметка времени последнего отклика
+        gaps.clear()
+        client.get("/employers/1")          # GET не ждёт
+        apply(1)                            # повтор того же отклика не ждёт
+        assert gaps == [], gaps
+        apply(2)                            # следующий отклик — ждёт
+        assert len(gaps) == 1 and 15 < gaps[0] <= 45, gaps
+
+        # отклик с тестом идёт мимо API, но тоже ждёт (штатный решатель без
+        # tool падает сразу после паузы — нам важна только пауза)
+        gaps.clear()
+        try:
+            av.Operation._solve_vacancy_test(object.__new__(av.Operation), 3, "r")
+        except AttributeError:
+            pass
+        assert len(gaps) == 1, gaps
+
+        # «Стоп» во время паузы: ApiError, отклик не отправлен
+        sent.clear()
+        hh_patch._gap_local.cancel = Cancel(stop=True)
+        try:
+            apply(4)
+            raise AssertionError("после «Стопа» ждём ApiError")
+        except errors.ApiError as ex:
+            assert "отклик не отправлен" in str(ex), str(ex)
+        assert sent == [], sent
+    finally:
+        hh_patch._gap_local.cancel = saved[0]
+        hh_patch._gap_last.update(saved[1])
+
+
+def t_hh_patch_application_gap_run():
+    """Обёртка Operation.run отдаёт паузе событие отмены операции и снимает его."""
+    import threading
+    import engine
+    import hh_patch
+    from hh_applicant_tool.operations import apply_vacancies as av
+
+    hh_patch._applied = False
+    hh_patch.apply_patches()
+    _, parser = engine._parser_for("apply_vacancies")
+    seen = []
+
+    class Tool:
+        config = {}
+        api_client = type("Client", (), {})()
+
+    op = av.Operation()
+    op._cancel_event = threading.Event()
+    op._apply_vacancies = lambda: seen.append(getattr(hh_patch._gap_local, "cancel", None))
+    op.run(Tool(), parser.parse_args([]))
+    assert seen == [op._cancel_event], seen
+    assert getattr(hh_patch._gap_local, "cancel", None) is None
 
 
 def t_hh_patch_delay_signature():
