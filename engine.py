@@ -158,7 +158,8 @@ DAILY_DEFAULTS: dict[str, Any] = {
 }
 
 # Паузa между запросами к API — случайная в этих границах (см. hh_patch).
-API_DELAY_RANGE = (0.8, 2.4)
+API_DELAY_RANGE = (2.0, 5.0)
+APPLY_DELAY_RANGE = (60.0, 90.0)
 
 
 # ------------------------------------------------------------------ argv

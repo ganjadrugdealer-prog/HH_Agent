@@ -48,7 +48,10 @@ logger = logging.getLogger("hh_applicant_tool")
 _applied = False
 
 # Границы случайной паузы между запросами, секунды.
-DELAY_RANGE = (0.8, 2.4)
+DELAY_RANGE = (2.0, 5.0)
+
+# Границы случайной паузы перед отправкой отклика (POST /negotiations), секунды.
+APPLY_DELAY_RANGE = (60.0, 90.0)
 
 
 def _is_excluded_by_name(self, vacancy) -> bool:
@@ -204,33 +207,39 @@ def patch_sqlite_types() -> None:
 
 # ------------------------------------------------------- случайная пауза
 
-def patch_api_delay(low: float | None = None, high: float | None = None) -> None:
+def patch_api_delay(low: float | None = None, high: float | None = None,
+                    apply_low: float | None = None, apply_high: float | None = None) -> None:
     """Заменяет фиксированный интервал между запросами на случайный.
 
     В BaseClient.request пауза берётся из self.delay, если аргумент delay не
     передан. Подменяем сам метод: когда вызывающий код не указал паузу явно,
-    подставляем случайную из диапазона. Явные значения (движок кое-где уже
-    ставит random.uniform(1, 3)) не трогаем.
+    подставляем случайную из диапазона. Для создания отклика принудительно
+    используем отдельный диапазон, даже если движок передал короткую паузу.
     """
     from hh_applicant_tool.api.client import BaseClient
 
     if getattr(BaseClient, "_hh_delay_patched", False):
         return
 
-    lo, hi = (low, high) if (low and high) else DELAY_RANGE
+    lo, hi = (low, high) if (low is not None and high is not None) else DELAY_RANGE
     if lo > hi:
         lo, hi = hi, lo
+    alo, ahi = (apply_low, apply_high) if (apply_low is not None and apply_high is not None) else APPLY_DELAY_RANGE
+    if alo > ahi:
+        alo, ahi = ahi, alo
     original = BaseClient.request
 
     def request(self, method, endpoint, params=None, delay=None,
                 as_json=False, **kwargs):
-        if delay is None:
+        if method == "POST" and urlsplit(str(endpoint)).path.rstrip("/") == "/negotiations":
+            delay = random.uniform(alo, ahi)
+        elif delay is None:
             delay = random.uniform(lo, hi)
         return original(self, method, endpoint, params, delay, as_json, **kwargs)
 
     BaseClient.request = request
     BaseClient._hh_delay_patched = True
-    logger.debug("hh_patch: пауза между запросами %.2f–%.2f с", lo, hi)
+    logger.debug("hh_patch: пауза между запросами %.2f–%.2f с (отклики: %.2f–%.2f с)", lo, hi, alo, ahi)
 
 
 # --------------------------------------------------------- пинги без повторов
@@ -305,6 +314,25 @@ def _auth_window_geometry() -> tuple[int, int]:
     return 520, height
 
 
+def _browser_proxy(proxy_url: str) -> dict:
+    """Прокси браузера без подмены протокола, адреса или порта."""
+    from urllib.parse import unquote
+
+    parsed = urlsplit(proxy_url)
+    if parsed.scheme.startswith("socks") and (parsed.username or parsed.password):
+        raise ValueError("Chromium не поддерживает SOCKS с паролем; укажите HTTP-прокси провайдера")
+    host = parsed.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    proxy = {"server": f"{parsed.scheme}://{host}{port}"}
+    if parsed.username is not None:
+        proxy["username"] = unquote(parsed.username)
+    if parsed.password is not None:
+        proxy["password"] = unquote(parsed.password)
+    return proxy
+
+
 def patch_auth_window() -> None:
     """Заставляет playwright открывать окно входа по размеру экрана."""
     from playwright.async_api import Browser, BrowserType
@@ -318,6 +346,10 @@ def patch_auth_window() -> None:
 
     async def launch(self, **kwargs):
         args = list(kwargs.get("args") or [])
+        for arg in list(args):
+            if arg.startswith("--proxy-server="):
+                kwargs["proxy"] = _browser_proxy(arg.split("=", 1)[1])
+                args.remove(arg)
         if not any(a.startswith("--window-size") for a in args):
             args.append(f"--window-size={width},{height}")
             args.append("--window-position=80,40")
@@ -387,7 +419,7 @@ def patch_auth_page_load() -> None:
 # Сколько ждать, пока человек введёт капчу, секунды.
 CAPTCHA_WAIT_S = 600
 # Пауза после принятой капчи перед повтором запроса (как в 2.x).
-CAPTCHA_COOLDOWN_S = 5.0
+CAPTCHA_COOLDOWN_S = 60.0
 # Сколько капч подряд решаем на один запрос, прежде чем сдаться (как в 2.x).
 MAX_CAPTCHA_ROUNDS = 5
 _CAPTCHA_PATH = "/account/captcha"
@@ -432,7 +464,7 @@ def _is_captcha_accepted(method: str, url: str, status: int, location: str) -> b
 
 
 async def _manual_captcha(captcha_url: str, session, proxy_url: str | None = None,
-                          cancel=None) -> bool:
+                          cancel=None, user_agent=None) -> bool:
     """Показывает капчу в окне браузера и ждёт, пока человек её введёт.
 
     Успех — hh принял ответ (_is_captcha_accepted) или страница ушла с
@@ -443,12 +475,14 @@ async def _manual_captcha(captcha_url: str, session, proxy_url: str | None = Non
     import asyncio
     from playwright.async_api import async_playwright
 
-    args = [f"--proxy-server={proxy_url}"] if proxy_url else []
+    launch_kwargs = {"headless": False}
+    if proxy_url:
+        launch_kwargs["proxy"] = _browser_proxy(proxy_url)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=False, args=args)
+        browser = await pw.chromium.launch(**launch_kwargs)
         try:
-            context = await browser.new_context()
+            context = await browser.new_context(**({"user_agent": user_agent} if user_agent else {}))
             cookies = _session_cookies_for_browser(session)
             if cookies:
                 try:
@@ -556,7 +590,7 @@ def patch_manual_captcha() -> None:
                 proxy_url = (self.proxies or {}).get("https")
                 try:
                     solved = asyncio.run(
-                        _manual_captcha(ex.captcha_url, self.session, proxy_url, cancel))
+                        _manual_captcha(ex.captcha_url, self.session, proxy_url, cancel, self.user_agent))
                 except Exception:
                     logger.exception("Окно капчи не открылось")
                     solved = False

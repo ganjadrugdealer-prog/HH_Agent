@@ -677,7 +677,7 @@ def _captcha_fixture():
             raise errors.CaptchaRequired(Resp(), data)
         return result
 
-    async def fake_manual(url, session, proxy_url=None, cancel=None):
+    async def fake_manual(url, session, proxy_url=None, cancel=None, user_agent=None):
         st["windows"].append(url)
         result = st["solved"].pop(0)
         if isinstance(result, Exception):
@@ -867,6 +867,59 @@ def t_hh_patch_delay_signature():
     sig = inspect.signature(BaseClient.request)
     names = list(sig.parameters)
     assert names[:6] == ["self", "method", "endpoint", "params", "delay", "as_json"], names
+
+
+def t_browser_proxy_credentials():
+    import hh_patch
+    proxy = hh_patch._browser_proxy("http://user%40name:p%3Ass@example.com:8448")
+    assert proxy == {"server": "http://example.com:8448", "username": "user@name", "password": "p:ss"}, proxy
+    assert hh_patch._browser_proxy("socks5://127.0.0.1:1091") == {"server": "socks5://127.0.0.1:1091"}
+    try:
+        hh_patch._browser_proxy("socks5://user:password@example.com:8447")
+    except ValueError as exc:
+        assert "password" not in str(exc)
+    else:
+        raise AssertionError("SOCKS authentication must not silently change protocol")
+
+
+def t_hh_patch_delay_overrides():
+    """POST /negotiations переопределяет delay на диапазон откликов, GET — на обычный."""
+    import hh_patch
+    from hh_applicant_tool.api.client import BaseClient
+
+    delays = []
+
+    def mock_orig(self, method, endpoint, params=None, delay=None, as_json=False, **kwargs):
+        delays.append((method, endpoint, delay))
+        return {}
+
+    prev_patched = getattr(BaseClient, "_hh_delay_patched", False)
+    prev_req = BaseClient.request
+    try:
+        BaseClient._hh_delay_patched = False
+        BaseClient.request = mock_orig
+        hh_patch.patch_api_delay(low=2.0, high=5.0, apply_low=12.0, apply_high=25.0)
+
+        client = BaseClient.__new__(BaseClient)
+
+        client.request("GET", "/employers/123")
+        assert 2.0 <= delays[-1][2] <= 5.0, delays[-1]
+
+        client.request("POST", "/negotiations", delay=1.5)
+        assert 12.0 <= delays[-1][2] <= 25.0, delays[-1]
+
+        for endpoint in ("/negotiations/123/messages", "/other/negotiations"):
+            client.request("POST", endpoint, delay=1.5)
+            assert delays[-1][2] == 1.5, delays[-1]
+
+        client.request("POST", "https://api.hh.ru/negotiations?test=1", delay=1.5)
+        assert 12.0 <= delays[-1][2] <= 25.0, delays[-1]
+
+        client.request("GET", "/vacancies", delay=99.0)
+        assert delays[-1][2] == 99.0, delays[-1]
+    finally:
+        BaseClient.request = prev_req
+        BaseClient._hh_delay_patched = prev_patched
 
 
 # ------------------------------------------------------------------- app_api
