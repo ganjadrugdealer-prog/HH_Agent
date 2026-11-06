@@ -464,7 +464,7 @@ def _is_captcha_accepted(method: str, url: str, status: int, location: str) -> b
 
 
 async def _manual_captcha(captcha_url: str, session, proxy_url: str | None = None,
-                          cancel=None, user_agent=None) -> bool:
+                          cancel=None) -> bool:
     """Показывает капчу в окне браузера и ждёт, пока человек её введёт.
 
     Успех — hh принял ответ (_is_captcha_accepted) или страница ушла с
@@ -482,7 +482,7 @@ async def _manual_captcha(captcha_url: str, session, proxy_url: str | None = Non
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(**launch_kwargs)
         try:
-            context = await browser.new_context(**({"user_agent": user_agent} if user_agent else {}))
+            context = await browser.new_context()
             cookies = _session_cookies_for_browser(session)
             if cookies:
                 try:
@@ -590,7 +590,7 @@ def patch_manual_captcha() -> None:
                 proxy_url = (self.proxies or {}).get("https")
                 try:
                     solved = asyncio.run(
-                        _manual_captcha(ex.captcha_url, self.session, proxy_url, cancel, self.user_agent))
+                        _manual_captcha(ex.captcha_url, self.session, proxy_url, cancel))
                 except Exception:
                     logger.exception("Окно капчи не открылось")
                     solved = False
