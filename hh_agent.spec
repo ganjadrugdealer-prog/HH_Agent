@@ -82,6 +82,7 @@ app_modules = [
     "core_manager",
     "engine",
     "hh_patch",
+    "selection",
     "letters",
     "profiles",
     "run_monitor",

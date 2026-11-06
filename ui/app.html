@@ -1232,13 +1232,23 @@
       }
       box.appendChild(resumeRow(
         {id:'', title:'Все резюме',
-         sub:'Ядро пройдёт по всем резюме по очереди — прежнее поведение.'},
+         sub:'Для каждого резюме применяются условия его направления.'},
         r.selected));
-      list.forEach(function(it){ box.appendChild(resumeRow(it, r.selected)); });
+      list.forEach(function(it){
+        var row=resumeRow(it, r.selected);
+        var sel=document.createElement('select');
+        [['','Выберите направление'],['automation','Автоматизация · удалённо · от 100000 ₽ на руки'],['media','Медиапроекты · удалённо · от 100000 ₽ на руки'],['photography','Фотография · формат и оплата договорные']].forEach(function(pair){
+          var opt=document.createElement('option'); opt.value=pair[0]; opt.textContent=pair[1]; sel.appendChild(opt);
+        });
+        sel.value=(r.policies||{})[it.id]||'';
+        sel.onclick=function(e){e.stopPropagation();};
+        sel.onchange=function(){api().set_resume_policy(it.id, sel.value).then(function(x){say(x.status==='ok'?'ok':'err',x.message);});};
+        row.appendChild(sel); box.appendChild(row);
+      });
 
       if(msg) say(msgKind||'ok', msg);
       else if(r.stale) say('warn','Выбранного резюме больше нет на hh.ru — '
-        + 'рассылка пойдёт по всем.');
+        + 'выберите существующее резюме; отправка остановлена.');
       else say('', null);
     });
   }

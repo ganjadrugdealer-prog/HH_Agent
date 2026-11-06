@@ -41,9 +41,107 @@ import random
 import re
 import sys
 import threading
+from contextlib import contextmanager
+from pathlib import Path
 from urllib.parse import urlsplit
 
 logger = logging.getLogger("hh_applicant_tool")
+
+
+@contextmanager
+def selection_read_only():
+    """В том числе запрещаем автоматическое обновление токена через POST."""
+    from hh_applicant_tool.api.client import BaseClient
+    original = BaseClient.request
+    thread_id = threading.get_ident()
+
+    def request(self, method, *args, **kwargs):
+        if threading.get_ident() == thread_id and method.upper() != 'GET':
+            raise RuntimeError('Просмотр разрешает только чтение. При необходимости обновите вход отдельно.')
+        return original(self, method, *args, **kwargs)
+
+    BaseClient.request = request
+    try:
+        yield
+    finally:
+        BaseClient.request = original
+
+
+@contextmanager
+def selection_guard(tool, policies, directory, rows, options=None, excluded_pattern=None):
+    """Защита действует на весь вызов ядра, включая повтор после капчи."""
+    import selection
+    from hh_applicant_tool.operations.apply_vacancies import Operation
+
+    client = tool.api_client
+    original_get = Operation._get_vacancies
+    original_request = client.request
+    own_request = client.__dict__.get('request')
+    had_request = 'request' in client.__dict__
+    history = selection.sent_history(directory)
+
+    def vacancies(operation, resume_id=None):
+        policy = policies.get(resume_id)
+        if policy not in selection.POLICIES:
+            raise RuntimeError('Направление резюме не задано: отправка остановлена')
+        limit = ((options or {}).get('total_pages') or 20) * ((options or {}).get('per_page') or 100)
+        for full, row in selection.candidates(client, resume_id, policy, history, limit, options, excluded_pattern):
+            if getattr(operation, '_cancel_event', None) and operation._cancel_event.is_set():
+                return
+            rows.append(row)
+            print('Подбор:', row['decision'], row['name'], '; '.join(row['reasons']))
+            if row['decision'] == 'eligible':
+                yield full
+
+    def request(method, endpoint, params=None, *args, **kwargs):
+        verb = method.upper()
+        path = urlsplit(str(endpoint)).path.rstrip('/')
+        if verb != 'GET':
+            if verb != 'POST' or path != '/negotiations':
+                raise RuntimeError('Операция записи запрещена защитой подбора')
+            payload = dict(params or {})
+            payload.update({k: v for k, v in kwargs.items() if k in ('resume_id', 'vacancy_id')})
+            rid, vid = str(payload.get('resume_id') or ''), str(payload.get('vacancy_id') or '')
+            policy = policies.get(rid)
+            if policy not in selection.POLICIES or not vid:
+                raise RuntimeError('Нет привязки резюме или вакансии: отправка остановлена')
+            full = client.get('/vacancies/' + vid)
+            decision = selection.evaluate(full, policy, history, excluded_pattern)
+            if decision['decision'] != 'eligible':
+                raise RuntimeError('Отправка запрещена: ' + '; '.join(decision['reasons']))
+            # Потерянный ответ не должен разрешать новую попытку в следующем прогоне.
+            pending_path = Path(directory) / 'selection-pending.json'
+            pending = set(json.loads(pending_path.read_text(encoding='utf-8'))) if pending_path.exists() else set()
+            pending.add(vid)
+            temp = pending_path.with_suffix('.tmp')
+            temp.write_text(json.dumps(sorted(pending)), encoding='utf-8')
+            temp.replace(pending_path)
+            history.add(vid)
+        result = original_request(method, endpoint, params, *args, **kwargs)
+        if verb == 'POST':
+            history.add(vid)
+            target = Path(directory) / 'selection-sent.json'
+            confirmed = set(json.loads(target.read_text(encoding='utf-8'))) if target.exists() else set()
+            confirmed.add(vid)
+            temp = target.with_suffix('.tmp')
+            temp.write_text(json.dumps(sorted(confirmed)), encoding='utf-8')
+            temp.replace(target)
+            pending.discard(vid)
+            temp = pending_path.with_suffix('.tmp')
+            temp.write_text(json.dumps(sorted(pending)), encoding='utf-8')
+            temp.replace(pending_path)
+        return result
+
+    Operation._get_vacancies = vacancies
+    client.request = request
+    try:
+        yield
+    finally:
+        Operation._get_vacancies = original_get
+        if had_request:
+            client.request = own_request
+        else:
+            client.__dict__.pop('request', None)
 
 _applied = False
 

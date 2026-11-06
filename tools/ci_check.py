@@ -49,6 +49,9 @@ def main() -> int:
     subprocess.call([sys.executable, "-m", "pip", "install", "--quiet", "pyflakes"])
 
     print("[ci_check] прогон selfcheck")
+    rc = subprocess.call([sys.executable, str(ROOT / 'tools' / 'test_selection.py')])
+    if rc:
+        return rc
     return subprocess.call([sys.executable, str(ROOT / "tools" / "selfcheck.py"),
                             str(ROOT)])
 

@@ -1619,11 +1619,15 @@ def _apply_api(root: Path):
     import app_api
     from run_monitor import RunMonitor
     tool = _FakeTool(root)
+    from types import SimpleNamespace
+    tool.api_client = SimpleNamespace(request=lambda *a, **kw: {})
+    tool.config.save(resume_policies={'manager': 'automation'})
     api = app_api.AppApi.__new__(app_api.AppApi)
     api._tool = tool
     api._window = None
     api._cancel_event = None
     api._is_running = False
+    api._resumes_raw = lambda: [{'id': 'manager', 'status': {'id': 'published'}}]
     api.monitor = RunMonitor(tool, root)
     api.monitor.open_window = lambda a, p: api.monitor.reset()
     (root / "letter.txt").write_text("{Здравствуйте|Добрый день}, %(first_name)s",

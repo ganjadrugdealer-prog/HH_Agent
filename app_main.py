@@ -339,6 +339,12 @@ def selftest() -> int:
         ok = ok and patched
 
         import stopwords
+        import selection
+
+        rejected = selection.evaluate({'id': 'selftest', 'name': 'Начинающий фотограф'}, 'automation')
+        selection_ok = rejected['decision'] == 'excluded' and selection.search_params('automation')['work_format'] == ['REMOTE']
+        say('selection   :', 'ok' if selection_ok else 'FAIL')
+        ok = ok and selection_ok
 
         pat = stopwords.to_pattern("продажи, монтаж видео")
         import re as _re

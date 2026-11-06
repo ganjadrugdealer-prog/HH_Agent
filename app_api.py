@@ -25,6 +25,8 @@ from hh_applicant_tool.ui.api import Api
 import engine
 import letters
 import stopwords
+import selection
+from hh_patch import selection_guard, selection_read_only
 from run_monitor import RunMonitor
 
 logger = logging.getLogger("hh_agent")
@@ -235,6 +237,15 @@ class AppApi(Api):
             self._apply_lock.release()
 
     def _apply_locked(self, params: dict[str, Any]) -> dict[str, Any]:
+        if params.get('dry_run'):
+            return self.preview_selection(params.get('resume_id'))
+        policies = self._selection_policies(params.get('resume_id'))
+        if not policies:
+            return {'status': 'error', 'message': 'Назначьте направление каждому выбранному резюме во вкладке «Резюме».'}
+        selected = params.get('resume_id') or self.search_settings().get('resume_id')
+        if selected:
+            params['resume_id'] = selected
+        logger.info('Подбор: эффективный resume_id=%s, направления=%s', selected or 'all', policies)
         # Без сопроводительного письма рассылку не запускаем: иначе движок
         # подставит свою заглушку из apply_vacancies.py, и работодатели
         # получат безликий текст «Прошу рассмотреть мою кандидатуру».
@@ -253,24 +264,24 @@ class AppApi(Api):
                 params["excluded_filter"] = pattern
                 logger.info("стоп-фильтр: %s", pattern)
 
-        # Текстовый поиск отключён намеренно: с ним движок уходит с
-        # /similar_vacancies на обычный поиск и рекомендации HH перестают
-        # работать. Все фильтры (зарплата, регион, формат) работают и без него.
-        if params.pop("search", None):
-            logger.info("поисковая строка отброшена: работаем по рекомендациям")
+        # Кандидаты подбираются отдельно по условиям каждого направления.
+        params['send_email'] = False
+        params['skip_tests'] = True
 
         # Пауза между запросами теперь случайная (hh_patch), фиксированную
         # из пресетов не берём.
         params.pop("api_delay", None)
 
         params = engine.apply_params(params)
+        excluded_pattern = params.pop('excluded_filter', None)
 
         cancel = threading.Event()
         self._cancel_event = cancel
         self._is_running = True
         try:
             try:
-                self.monitor.open_window(self, params)
+                self.monitor.open_window(self, dict(params, resume_policies=policies,
+                    selection_queries={rid: selection.search_params(p) for rid, p in policies.items()}))
             except Exception:
                 logger.exception("не смог открыть окно прогона")
 
@@ -284,8 +295,13 @@ class AppApi(Api):
                 sent += 1
                 self._send_progress(sent, 0, line)
 
-            text, code = engine.run(self._tool, "apply", params,
-                                    on_line=on_line, cancel=cancel)
+            rows = []
+            try:
+                with selection_guard(self._tool, policies, self.profile_dir(), rows, params, excluded_pattern):
+                    text, code = engine.run(self._tool, "apply", params,
+                                            on_line=on_line, cancel=cancel)
+            finally:
+                selection.write_report(self.profile_dir() / 'selection-reports' / 'selection-last.html', rows)
             if code == 0:
                 result = {"status": "cancelled" if cancel.is_set() else "ok"}
             else:
@@ -606,6 +622,48 @@ class AppApi(Api):
 
     SEARCH_KEY = "app_search"
 
+    def set_resume_policy(self, resume_id: str, policy: str) -> dict[str, Any]:
+        if policy not in selection.POLICIES:
+            return {'status': 'error', 'message': 'Выберите направление.'}
+        if resume_id not in {r.get('id') for r in self._resumes_raw()}:
+            return {'status': 'error', 'message': 'Резюме не найдено.'}
+        mapping = dict(self._tool.config.get('resume_policies') or {})
+        mapping[resume_id] = policy
+        self._tool.config.save(resume_policies=mapping)
+        return {'status': 'ok', 'message': 'Направление сохранено.'}
+
+    def _selection_policies(self, resume_id=None):
+        selected = resume_id or self.search_settings().get('resume_id')
+        mapping = self._tool.config.get('resume_policies') or {}
+        resumes = self._resumes_raw()
+        chosen = [r for r in resumes if r.get('id') == selected] if selected else [r for r in resumes if (r.get('status') or {}).get('id') == 'published']
+        if not chosen or any(mapping.get(r['id']) not in selection.POLICIES for r in chosen):
+            return {}
+        return {r['id']: mapping[r['id']] for r in chosen}
+
+    def preview_selection(self, resume_id=None) -> dict[str, Any]:
+        try:
+            with selection_read_only():
+                return self._preview_selection(resume_id)
+        except Exception as exc:
+            logger.warning('Просмотр подбора остановлен: %s', type(exc).__name__)
+            return {'status': 'error', 'message': 'Не удалось прочитать полные карточки HH. Проверьте вход и капчу; отклики не отправлялись.'}
+
+    def _preview_selection(self, resume_id=None) -> dict[str, Any]:
+        policies = self._selection_policies(resume_id)
+        if not policies:
+            return {'status': 'error', 'message': 'Назначьте направление выбранным резюме во вкладке «Резюме».'}
+        rows = []
+        history = selection.sent_history(self.profile_dir())
+        settings = self.search_settings()
+        excluded_pattern = stopwords.to_pattern(settings.get('stop_words') or '')
+        for rid, policy in policies.items():
+            rows.extend(row for _, row in selection.candidates(self._tool.api_client, rid, policy, history, 30, settings, excluded_pattern))
+        target = self.profile_dir() / 'selection-reports' / 'selection-preview.html'
+        selection.write_report(target, rows)
+        os.startfile(str(target)) if sys.platform == 'win32' else subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(target)])
+        return {'status': 'ok', 'message': f'Проверено {len(rows)} вакансий без отправки. Открыт отчёт с причинами.'}
+
     SEARCH_DEFAULTS: dict[str, Any] = {
         "stop_words": "",
         # "" / None — рассылка по всем резюме (поведение по умолчанию).
@@ -762,6 +820,7 @@ class AppApi(Api):
         stale = bool(selected) and bool(items) and selected not in known
         return {
             "items": items,
+            "policies": self._tool.config.get('resume_policies') or {},
             "selected": "" if stale else selected,
             "stale": stale,
             "authorized": bool(items) or self._has_token(),
